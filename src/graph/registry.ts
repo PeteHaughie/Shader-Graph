@@ -12,8 +12,8 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
-      { name: "scale", type: "float", default: 1, min: 0, max: 100 },
-      { name: "seed", type: "float", default: 0, min: 0, max: 100 },
+      { name: "scale", type: "float", default: 1, min: 0, max: 100, isInput: true },
+      { name: "seed", type: "float", default: 0, min: 0, max: 100, isInput: true },
     ],
   },
   {
@@ -21,8 +21,8 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
-      { name: "scale", type: "float", default: 1, min: 0, max: 100 },
-      { name: "seed", type: "float", default: 0, min: 0, max: 100 },
+      { name: "scale", type: "float", default: 1, min: 0, max: 100, isInput: true },
+      { name: "seed", type: "float", default: 0, min: 0, max: 100, isInput: true },
     ],
   },
   {
@@ -30,11 +30,11 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
-      { name: "scale", type: "float", default: 1, min: 0, max: 100 },
-      { name: "seed", type: "float", default: 0, min: 0, max: 100 },
-      { name: "octaves", type: "int", default: 4, min: 1, max: 8 },
-      { name: "lacunarity", type: "float", default: 2, min: 1, max: 5 },
-      { name: "gain", type: "float", default: 0.5, min: 0, max: 1 },
+      { name: "scale", type: "float", default: 1, min: 0, max: 100, isInput: true },
+      { name: "seed", type: "float", default: 0, min: 0, max: 100, isInput: true },
+      { name: "octaves", type: "int", default: 4, min: 1, max: 8, isInput: true },
+      { name: "lacunarity", type: "float", default: 2, min: 1, max: 5, isInput: true },
+      { name: "gain", type: "float", default: 0.5, min: 0, max: 1, isInput: true },
     ],
   },
   {
@@ -55,7 +55,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "colorB", type: PortType.Vec4 },
     ],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360 }],
+    params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true }],
   },
   {
     typeName: "Checkerboard",
@@ -64,25 +64,25 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "colorB", type: PortType.Vec4 },
     ],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "frequency", type: "float", default: 4, min: 0.1, max: 50 }],
+    params: [{ name: "frequency", type: "float", default: 4, min: 0.1, max: 50, isInput: true }],
   },
   {
     typeName: "Blur",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "radius", type: "float", default: 2, min: 0, max: 50 }],
+    params: [{ name: "radius", type: "float", default: 2, min: 0, max: 50, isInput: true }],
   },
   {
     typeName: "Glow",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "intensity", type: "float", default: 1, min: 0, max: 5 }],
+    params: [{ name: "intensity", type: "float", default: 1, min: 0, max: 5, isInput: true }],
   },
   {
     typeName: "EdgeDetect",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "strength", type: "float", default: 1, min: 0, max: 5 }],
+    params: [{ name: "strength", type: "float", default: 1, min: 0, max: 5, isInput: true }],
   },
   {
     typeName: "Displace",
@@ -91,28 +91,28 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "map", type: PortType.Vec4 },
     ],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "amount", type: "float", default: 0.05, min: 0, max: 1 }],
+    params: [{ name: "amount", type: "float", default: 0.05, min: 0, max: 1, isInput: true }],
   },
   {
     typeName: "BrightnessContrast",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
-      { name: "brightness", type: "float", default: 0, min: -1, max: 1 },
-      { name: "contrast", type: "float", default: 0, min: -1, max: 1 },
+      { name: "brightness", type: "float", default: 0, min: -1, max: 1, isInput: true },
+      { name: "contrast", type: "float", default: 0, min: -1, max: 1, isInput: true },
     ],
   },
   {
     typeName: "HueShift",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360 }],
+    params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true }],
   },
   {
     typeName: "Saturation",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "amount", type: "float", default: 1, min: 0, max: 2 }],
+    params: [{ name: "amount", type: "float", default: 1, min: 0, max: 2, isInput: true }],
   },
   {
     typeName: "Invert",
@@ -124,13 +124,13 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     typeName: "Threshold",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "level", type: "float", default: 0.5, min: 0, max: 1 }],
+    params: [{ name: "level", type: "float", default: 0.5, min: 0, max: 1, isInput: true }],
   },
   {
     typeName: "Time",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "speed", type: "float", default: 1, min: 0, max: 10 }],
+    params: [{ name: "speed", type: "float", default: 1, min: 0, max: 10, isInput: true }],
   },
   {
     typeName: "SmoothStep",
@@ -155,7 +155,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "b", type: PortType.Vec4 },
     ],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "factor", type: "float", default: 0.5, min: 0, max: 1 }],
+    params: [{ name: "factor", type: "float", default: 0.5, min: 0, max: 1, isInput: true }],
   },
   {
     typeName: "Add",

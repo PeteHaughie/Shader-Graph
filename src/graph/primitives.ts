@@ -14,6 +14,7 @@ export interface ParamSpec {
   default: unknown;
   min?: number;
   max?: number;
+  isInput?: boolean;
 }
 
 export interface PrimitiveDefinition {

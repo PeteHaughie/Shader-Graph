@@ -26,6 +26,12 @@ function toGLSLFloat(n: number): string {
   return s.includes(".") ? s : `${s}.0`;
 }
 
+function wiredParam(inputVarMap: Map<string, string>, params: Record<string, unknown>, name: string, def: number): string {
+  const wired = inputVarMap.get(name);
+  if (wired) return `${wired}.r`;
+  return toGLSLFloat((params[name] as number) ?? def);
+}
+
 function generateNoiseGLSL(): string {
   return `
 float hash21(vec2 p) {
@@ -168,28 +174,19 @@ export function compileGraph(state: GraphState): CompiledShader {
         break;
       }
       case "Noise": {
-        const scale = (node.params.scale as number) ?? 1;
-        const seed = (node.params.seed as number) ?? 0;
-        nodeCode.push(`  vec4 ${varName} = noise1d(${toGLSLFloat(scale)}, ${toGLSLFloat(seed)});`);
+        nodeCode.push(`  vec4 ${varName} = noise1d(${wiredParam(inputVarMap, node.params, "scale", 1)}, ${wiredParam(inputVarMap, node.params, "seed", 0)});`);
         break;
       }
       case "SmoothNoise": {
-        const scale = (node.params.scale as number) ?? 1;
-        const seed = (node.params.seed as number) ?? 0;
-        nodeCode.push(`  vec4 ${varName} = vec4(smoothNoise(gl_FragCoord.xy * ${toGLSLFloat(scale)} + ${toGLSLFloat(seed)}));`);
+        nodeCode.push(`  vec4 ${varName} = vec4(smoothNoise(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}));`);
         break;
       }
       case "FractalNoise": {
-        const scale = (node.params.scale as number) ?? 1;
-        const seed = (node.params.seed as number) ?? 0;
-        const lacunarity = (node.params.lacunarity as number) ?? 2;
-        const gain = (node.params.gain as number) ?? 0.5;
-        nodeCode.push(`  vec4 ${varName} = vec4(fbm(gl_FragCoord.xy * ${toGLSLFloat(scale)} + ${toGLSLFloat(seed)}, ${toGLSLFloat(lacunarity)}, ${toGLSLFloat(gain)}));`);
+        nodeCode.push(`  vec4 ${varName} = vec4(fbm(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}, ${wiredParam(inputVarMap, node.params, "lacunarity", 2)}, ${wiredParam(inputVarMap, node.params, "gain", 0.5)}));`);
         break;
       }
       case "Time": {
-        const speed = (node.params.speed as number) ?? 1;
-        nodeCode.push(`  vec4 ${varName} = vec4(iTime * ${toGLSLFloat(speed)});`);
+        nodeCode.push(`  vec4 ${varName} = vec4(iTime * ${wiredParam(inputVarMap, node.params, "speed", 1)});`);
         break;
       }
       case "SmoothStep": {
@@ -218,9 +215,15 @@ export function compileGraph(state: GraphState): CompiledShader {
       case "Gradient": {
         const a = inputVarMap.get("colorA") ?? "vec4(0.0)";
         const b = inputVarMap.get("colorB") ?? "vec4(1.0)";
-        const angle = (node.params.angle as number) ?? 0;
-        const rad = (angle * Math.PI) / 180;
-        nodeCode.push(`  vec2 grad_dir = vec2(${toGLSLFloat(Math.cos(rad))}, ${toGLSLFloat(Math.sin(rad))});`);
+        const angleWired = inputVarMap.get("angle");
+        if (angleWired) {
+          nodeCode.push(`  float grad_a = ${angleWired}.r * 3.14159 / 180.0;`);
+          nodeCode.push(`  vec2 grad_dir = vec2(cos(grad_a), sin(grad_a));`);
+        } else {
+          const angle = (node.params.angle as number) ?? 0;
+          const rad = (angle * Math.PI) / 180;
+          nodeCode.push(`  vec2 grad_dir = vec2(${toGLSLFloat(Math.cos(rad))}, ${toGLSLFloat(Math.sin(rad))});`);
+        }
         nodeCode.push(`  float grad_t = dot(gl_FragCoord.xy, grad_dir) / dot(iResolution, abs(grad_dir));`);
         nodeCode.push(`  vec4 ${varName} = mix(${a}, ${b}, clamp(grad_t, 0.0, 1.0));`);
         break;
@@ -228,15 +231,12 @@ export function compileGraph(state: GraphState): CompiledShader {
       case "Checkerboard": {
         const a = inputVarMap.get("colorA") ?? "vec4(1.0)";
         const b = inputVarMap.get("colorB") ?? "vec4(0.0)";
-        const freq = (node.params.frequency as number) ?? 4;
-        nodeCode.push(`  vec2 cb = floor(${toGLSLFloat(freq)} * gl_FragCoord.xy / iResolution);`);
+        nodeCode.push(`  vec2 cb = floor(${wiredParam(inputVarMap, node.params, "frequency", 4)} * gl_FragCoord.xy / iResolution);`);
         nodeCode.push(`  vec4 ${varName} = mod(cb.x + cb.y, 2.0) < 0.5 ? ${a} : ${b};`);
         break;
       }
       case "Blur": {
-        const radius = (node.params.radius as number) ?? 2;
-        const r = toGLSLFloat(radius);
-        nodeCode.push(`  vec2 blur_step = vec2(${r}) / iResolution;`);
+        nodeCode.push(`  vec2 blur_step = vec2(${wiredParam(inputVarMap, node.params, "radius", 2)}) / iResolution;`);
         nodeCode.push(`  vec2 blur_uv = gl_FragCoord.xy / iResolution;`);
         nodeCode.push(`  vec4 ${varName} = vec4(0.0);`);
         nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(-blur_step.x, -blur_step.y));`);
@@ -253,9 +253,8 @@ export function compileGraph(state: GraphState): CompiledShader {
       }
       case "Glow": {
         const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const intensity = (node.params.intensity as number) ?? 1;
         nodeCode.push(`  float bright = max(${input}.r, max(${input}.g, ${input}.b));`);
-        nodeCode.push(`  vec4 ${varName} = ${input} * clamp(bright * ${toGLSLFloat(intensity)}, 0.0, 1.0);`);
+        nodeCode.push(`  vec4 ${varName} = ${input} * clamp(bright * ${wiredParam(inputVarMap, node.params, "intensity", 1)}, 0.0, 1.0);`);
         break;
       }
       case "EdgeDetect": {
@@ -272,27 +271,24 @@ export function compileGraph(state: GraphState): CompiledShader {
       }
       case "BrightnessContrast": {
         const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const brightness = (node.params.brightness as number) ?? 0;
-        const contrast = (node.params.contrast as number) ?? 0;
-        const cf = (259.0 * (255.0 + 255.0 * contrast)) / (255.0 * (259.0 - 255.0 * contrast));
-        nodeCode.push(`  vec3 bc_c = ${input}.rgb + ${toGLSLFloat(brightness)};`);
-        nodeCode.push(`  bc_c = ${toGLSLFloat(cf)} * (bc_c - 0.5) + 0.5;`);
+        const b = wiredParam(inputVarMap, node.params, "brightness", 0);
+        const c = wiredParam(inputVarMap, node.params, "contrast", 0);
+        nodeCode.push(`  vec3 bc_c = ${input}.rgb + ${b};`);
+        nodeCode.push(`  bc_c = (259.0 * (255.0 + 255.0 * ${c})) / (255.0 * (259.0 - 255.0 * ${c})) * (bc_c - 0.5) + 0.5;`);
         nodeCode.push(`  vec4 ${varName} = vec4(clamp(bc_c, 0.0, 1.0), ${input}.a);`);
         break;
       }
       case "HueShift": {
         const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const angle = (node.params.angle as number) ?? 0;
         nodeCode.push(`  vec3 hs_hsv = rgb2hsv(${input}.rgb);`);
-        nodeCode.push(`  hs_hsv.x = fract(hs_hsv.x + ${toGLSLFloat(angle)} / 360.0);`);
+        nodeCode.push(`  hs_hsv.x = fract(hs_hsv.x + ${wiredParam(inputVarMap, node.params, "angle", 0)} / 360.0);`);
         nodeCode.push(`  vec4 ${varName} = vec4(hsv2rgb(hs_hsv), ${input}.a);`);
         break;
       }
       case "Saturation": {
         const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const amount = (node.params.amount as number) ?? 1;
         nodeCode.push(`  vec3 sat_hsv = rgb2hsv(${input}.rgb);`);
-        nodeCode.push(`  sat_hsv.y = clamp(sat_hsv.y * ${toGLSLFloat(amount)}, 0.0, 1.0);`);
+        nodeCode.push(`  sat_hsv.y = clamp(sat_hsv.y * ${wiredParam(inputVarMap, node.params, "amount", 1)}, 0.0, 1.0);`);
         nodeCode.push(`  vec4 ${varName} = vec4(hsv2rgb(sat_hsv), ${input}.a);`);
         break;
       }
@@ -303,16 +299,14 @@ export function compileGraph(state: GraphState): CompiledShader {
       }
       case "Threshold": {
         const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const level = (node.params.level as number) ?? 0.5;
         nodeCode.push(`  float thresh_lum = luminance(${input}.rgb);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(step(${toGLSLFloat(level)}, thresh_lum)), ${input}.a);`);
+        nodeCode.push(`  vec4 ${varName} = vec4(vec3(step(${wiredParam(inputVarMap, node.params, "level", 0.5)}, thresh_lum)), ${input}.a);`);
         break;
       }
       case "Mix": {
         const a = inputVarMap.get("a") ?? "vec4(0.0)";
         const b = inputVarMap.get("b") ?? "vec4(0.0)";
-        const factor = (node.params.factor as number) ?? 0.5;
-        nodeCode.push(`  vec4 ${varName} = mix(${a}, ${b}, ${toGLSLFloat(factor)});`);
+        nodeCode.push(`  vec4 ${varName} = mix(${a}, ${b}, ${wiredParam(inputVarMap, node.params, "factor", 0.5)});`);
         break;
       }
       case "Add": {

@@ -308,6 +308,46 @@ describe("new primitives", () => {
       g = connect(g, nodes[0].id, "out", nodes[2].id, "value");
       return connect(g, nodes[2].id, "out", nodes[3].id, "source");
     }));
+
+  it("Time wired to Mix.factor for animated blend", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Noise", { scale: 3, seed: 0 });
+      g = addNode(g, "SolidColor", { r: 1, g: 0, b: 0, a: 1 });
+      g = addNode(g, "Time", { speed: 0.2 });
+      g = addNode(g, "Mix", { factor: 0.5 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[3].id, "a");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "b");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "factor");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
+    }));
+
+  it("Time wired to Blur.radius for animated blur", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Texture", { url: "" });
+      g = addNode(g, "Time", { speed: 1 });
+      g = addNode(g, "Blur", { radius: 2 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "image");
+      g = connect(g, nodes[1].id, "out", nodes[2].id, "radius");
+      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+    }));
+
+  it("Time wired to Gradient.angle for rotating gradient", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 0, b: 1, a: 1 });
+      g = addNode(g, "SolidColor", { r: 1, g: 0, b: 0, a: 1 });
+      g = addNode(g, "Time", { speed: 0.5 });
+      g = addNode(g, "Gradient", { angle: 0 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[3].id, "colorA");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "colorB");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "angle");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
+    }));
 });
 
 describe("compileGraph", () => {

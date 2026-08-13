@@ -59,14 +59,12 @@ export function validateGraph(state: GraphState): ValidationResult {
 
     const fromPort = fromDef.outputs.find((p) => p.name === edge.fromPort);
     const toPort = toDef.inputs.find((p) => p.name === edge.toPort);
+    const toParam = toDef.params.find((p) => p.name === edge.toPort && p.isInput);
     if (!fromPort) {
       errors.push({ edgeId: edge.id, message: `Source node ${fromNode.typeName} has no output port: ${edge.fromPort}` });
     }
-    if (!toPort) {
+    if (!toPort && !toParam) {
       errors.push({ edgeId: edge.id, message: `Target node ${toNode.typeName} has no input port: ${edge.toPort}` });
-    }
-    if (fromPort && toPort && fromPort.type !== toPort.type) {
-      errors.push({ edgeId: edge.id, message: `Type mismatch: ${fromPort.type} → ${toPort.type}` });
     }
   }
 
@@ -86,7 +84,9 @@ export function validateGraph(state: GraphState): ValidationResult {
   for (const node of state.nodes.values()) {
     const def = getPrimitive(node.typeName);
     if (!def) continue;
+    const paramInputNames = new Set(def.params.filter((p) => p.isInput).map((p) => p.name));
     for (const input of def.inputs) {
+      if (paramInputNames.has(input.name)) continue;
       const connected = [...state.edges.values()].some((e) => e.toNode === node.id && e.toPort === input.name);
       if (!connected) {
         errors.push({ nodeId: node.id, message: `Input port "${input.name}" on ${node.typeName} is not connected` });
