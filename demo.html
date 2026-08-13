@@ -162,6 +162,17 @@
       return faces;
     }
 
+    function ensureOutwardWinding(verts, faces) {
+      return faces.map(f => {
+        const a = verts[f[0]], b = verts[f[1]], c = verts[f[2]];
+        const u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+        const v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+        const n = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
+        const center = [(a[0]+b[0]+c[0])/3, (a[1]+b[1]+c[1])/3, (a[2]+b[2]+c[2])/3];
+        return n[0]*center[0]+n[1]*center[1]+n[2]*center[2] < 0 ? [f[0], f[2], f[1]] : f;
+      });
+    }
+
     const φ = (1 + Math.sqrt(5)) / 2;
 
     const solids = {
@@ -177,10 +188,10 @@
         [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
         [[4,0,2],[4,2,1],[4,1,3],[4,3,0],[5,2,0],[5,1,2],[5,3,1],[5,0,3]]
       ),
-      icosahedron: buildTriangles(
-        [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]],
-        computeFaces([[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]])
-      )
+      icosahedron: (function() {
+        const v = [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]];
+        return buildTriangles(v, ensureOutwardWinding(v, computeFaces(v)));
+      })()
     };
 
     // Dodecahedron via dual of icosahedron
@@ -236,7 +247,7 @@
     function makeGeodesicSphere(level) {
       const φ = (1 + Math.sqrt(5)) / 2;
       let verts = [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]];
-      let faces = computeFaces(verts);
+      let faces = ensureOutwardWinding(verts, computeFaces(verts));
       for (let l = 0; l < level; l++) {
         const edgeMap = new Map();
         const newVerts = verts.map(v => [...v]);
