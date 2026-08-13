@@ -148,6 +148,29 @@
       return { positions: new Float32Array(positions), normals: new Float32Array(normals), count: positions.length / 3 };
     }
 
+    function buildTrianglesSmooth(verts, faces) {
+      const faceNorms = faces.map(f => faceNormal(verts[f[0]], verts[f[1]], verts[f[2]]));
+      const norms = verts.map(() => [0, 0, 0]);
+      const counts = verts.map(() => 0);
+      for (let fi = 0; fi < faces.length; fi++) {
+        for (const vi of faces[fi]) { norms[vi][0] += faceNorms[fi][0]; norms[vi][1] += faceNorms[fi][1]; norms[vi][2] += faceNorms[fi][2]; counts[vi]++; }
+      }
+      for (let i = 0; i < norms.length; i++) {
+        if (counts[i] > 0) { const l = Math.sqrt(norms[i][0]**2 + norms[i][1]**2 + norms[i][2]**2); if (l > 0) { norms[i][0] /= l; norms[i][1] /= l; norms[i][2] /= l; } }
+      }
+      const positions = [], normals = [];
+      for (const f of faces) {
+        if (f.length === 3) {
+          for (const i of f) { positions.push(...verts[i]); normals.push(...norms[i]); }
+        } else {
+          for (let i = 1; i < f.length - 1; i++) {
+            for (const j of [f[0], f[i], f[i + 1]]) { positions.push(...verts[j]); normals.push(...norms[j]); }
+          }
+        }
+      }
+      return { positions: new Float32Array(positions), normals: new Float32Array(normals), count: positions.length / 3 };
+    }
+
     function computeFaces(verts) {
       const edgeLen = 2, eps = 0.01, faces = [];
       for (let i = 0; i < verts.length; i++)
