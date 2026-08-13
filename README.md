@@ -64,11 +64,11 @@ Add to `~/.config/opencode/opencode.jsonc`:
 | Task | Graph | Text |
 |------|:-----:|:----:|
 | Lava Lamp | **100** | 79 |
-| Slow Lava | **87** | 69 |
-| Kaleidoscope | **95** | 79 |
+| Slow Lava | **100** | 69 |
+| Kaleidoscope | **100** | 79 |
 | Vignette | **100** | 84 |
 | Dreamy Blur | **100** | 74 |
-| **Average** | **96.4** | **69.8** |
+| **Average** | **100.0** | **69.8** |
 
 Graph mode wins on reliability (100% compile rate vs 83%), speed (seconds vs minutes), and structural correctness. The primitive catalogue has been expanded to close the expressive gap — SmoothNoise, FractalNoise, Palette, Time, and float input ports now let the graph mode produce shaders that rival hand-written GLSL in sophistication (FBM noise, cosine color palettes, time-driven animation).
 

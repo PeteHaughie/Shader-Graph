@@ -87,7 +87,12 @@ export async function scoreGLSL(source, task) {
   }
 
   const primitivesFound = countPrimitives(source);
-  const aliasMap = { Noise: ["Noise", "SmoothNoise", "FractalNoise"], HueShift: ["HueShift", "Palette"] };
+  const aliasMap = {
+    Noise: ["Noise", "SmoothNoise", "FractalNoise"],
+    HueShift: ["HueShift", "Palette"],
+    BrightnessContrast: ["BrightnessContrast", "Palette"],
+    Texture: ["Texture", "Checkerboard"],
+  };
   const missingPrimitives = task.scoring.requiredPrimitives.filter((p) => {
     const aliases = aliasMap[p] ?? [p];
     return !aliases.some((a) => primitivesFound.includes(a));

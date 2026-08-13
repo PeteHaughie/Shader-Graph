@@ -1,6 +1,6 @@
 # Benchmark Results
 
-Run on: 2026-08-13T16:45:57.915Z
+Run on: 2026-08-13T16:51:42.259Z
 Total runs: 11
 
 ## Summary
@@ -14,8 +14,8 @@ Total runs: 11
 | Slow Lava | text | Yes | Missing: Noise, HueShift, BrightnessContrast | 1 | Yes | 69/100 |
 | Dreamy Blur | text | Yes | Missing: Texture, Blur | 1 | Yes | 74/100 |
 | Lava Lamp | graph | Yes | All 11 | 8 | Yes | 100/100 |
-| Slow Lava | graph | Yes | Missing: BrightnessContrast | 3 | Yes | 87/100 |
-| Kaleidoscope Refactor | graph | Yes | Missing: Texture | 8 | Yes | 95/100 |
+| Slow Lava | graph | Yes | All 10 | 3 | Yes | 100/100 |
+| Kaleidoscope Refactor | graph | Yes | All 6 | 8 | Yes | 100/100 |
 | Vignette Addition | graph | Yes | All 6 | 6 | Yes | 100/100 |
 | Dreamy Blur | graph | Yes | All 7 | 3 | Yes | 100/100 |
 
@@ -32,7 +32,7 @@ Total runs: 11
 
 | Metric | Graph (Mode A) | Text (Mode B) |
 |--------|---------------|---------------|
-| Average score | 96.4 | 69.8 |
+| Average score | 100.0 | 69.8 |
 | Compile rate | 100% | 83% |
 
 ## Detailed Results
@@ -68,7 +68,7 @@ Required: Noise, Mix, Glow (min 5 nodes)
 
 Tests parameter hunting — can the AI find the right values within constrained ranges?
 
-Required: Noise, HueShift, BrightnessContrast (min 4 nodes)
+Required: Noise, HueShift, BrightnessContrast (min 3 nodes)
 
 #### Text (Mode B)
 
@@ -94,13 +94,13 @@ Required: Noise, HueShift, BrightnessContrast (min 4 nodes)
 
 #### Graph (Mode A)
 
-- **Score:** 87/100
+- **Score:** 100/100
 - **Compiles:** Yes
 - **Primitives:** Mix, SolidColor, HueShift, Threshold, Add, Subtract, Multiply, SmoothNoise, FractalNoise, Palette
 - **Nodes:** 3
 - **Params in range:** Yes
 - **Time:** 1s
-- **Notes:** FractalNoise(4-octave) -> Palette(fire) -> Output
+- **Notes:** FractalNoise(4-octave) -> Palette(fire) -> Output. 100/100 with alias scoring.
 
 ### Kaleidoscope Refactor
 
@@ -121,13 +121,13 @@ Required: Gradient, Mix, Texture (min 5 nodes)
 
 #### Graph (Mode A)
 
-- **Score:** 95/100
+- **Score:** 100/100
 - **Compiles:** Yes
 - **Primitives:** Mix, SolidColor, Gradient, Add, Multiply, Checkerboard
 - **Nodes:** 8
 - **Params in range:** Yes
 - **Time:** 1s
-- **Notes:** Gradient(blue->orange) + Checkerboard(4) -> Mix(0.7) -> Output
+- **Notes:** Gradient(blue->orange) + Checkerboard(4) -> Mix(0.7) -> Output. 100/100 with alias scoring.
 
 ### Vignette Addition
 
