@@ -54,7 +54,13 @@ float noise1d(float scale, float seed) {
 `;
 }
 
-export function compileVertexGraph(state: GraphState): CompiledShader {
+export interface VaryingInfo {
+  name: string;
+  type: string;
+  sourceNodeId: string;
+}
+
+export function compileVertexGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader & { varyings?: VaryingInfo[] } {
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {
@@ -67,6 +73,7 @@ export function compileVertexGraph(state: GraphState): CompiledShader {
   const { order } = topologicalSort(state);
   const nodeCode: string[] = [];
   const varNames = new Map<string, string>();
+  const varyings: VaryingInfo[] = externalVaryings ?? [];
 
   let varIndex = 0;
   for (const nodeId of order) {
@@ -179,6 +186,14 @@ export function compileVertexGraph(state: GraphState): CompiledShader {
         nodeCode.push(`  gl_Position = ${input};`);
         break;
       }
+      case "PassToFragment": {
+        const input = inputVarMap.get("value") ?? "vec4(0.0)";
+        const vName = (node.params.name as string) ?? "vData";
+        const sanitized = vName.replace(/[^a-zA-Z0-9_]/g, "_");
+        varyings.push({ name: sanitized, type: "vec4", sourceNodeId: node.id });
+        nodeCode.push(`  ${sanitized} = ${input};`);
+        break;
+      }
     }
   }
 
@@ -188,6 +203,9 @@ export function compileVertexGraph(state: GraphState): CompiledShader {
   const parts: string[] = [GLSL_HEADER];
   parts.push(GLSL_ATTRIBUTES);
   parts.push(GLSL_UNIFORMS);
+  for (const v of varyings) {
+    parts.push(`varying ${v.type} ${v.name};\n`);
+  }
   if (needsNoise) {
     parts.push(generateNoiseGLSL());
   }
@@ -195,7 +213,7 @@ export function compileVertexGraph(state: GraphState): CompiledShader {
   parts.push(nodeCode.join("\n"));
   parts.push("}\n");
 
-  return { source: parts.join(""), valid: true };
+  return { source: parts.join(""), valid: true, varyings };
 }
 
 export function validateGLSL(source: string): Promise<{ valid: boolean; output: string }> {

@@ -330,6 +330,37 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [],
     params: [],
   },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "PassToFragment",
+    inputs: [{ name: "value", type: PortType.Vec4 }],
+    outputs: [],
+    params: [{ name: "name", type: "string", default: "vData" }],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "FromVertex",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "name", type: "string", default: "vData" }],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "DiffuseLight",
+    inputs: [{ name: "normal", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "lightDir", type: "string", default: "0.5,1,0.5" },
+      { name: "color", type: "string", default: "1.0,0.0,0.0" },
+    ],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "AmbientLight",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "color", type: "string", default: "0.1,0.0,0.0" }],
+  },
 ];
 
 const BY_NAME = new Map<string, PrimitiveDefinition>(PRIMITIVES.map((p) => [p.typeName, p]));

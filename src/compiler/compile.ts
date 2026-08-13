@@ -137,7 +137,12 @@ vec4 sobel(sampler2D tex, vec2 uv, vec2 step) {
 `;
 }
 
-export function compileGraph(state: GraphState): CompiledShader {
+export interface VaryingInfo {
+  name: string;
+  type: string;
+}
+
+export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader {
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {
@@ -345,6 +350,27 @@ export function compileGraph(state: GraphState): CompiledShader {
         }
         break;
       }
+      case "FromVertex": {
+        const vName = (node.params.name as string) ?? "vData";
+        const sanitized = vName.replace(/[^a-zA-Z0-9_]/g, "_");
+        nodeCode.push(`  vec4 ${varName} = ${sanitized};`);
+        break;
+      }
+      case "DiffuseLight": {
+        const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
+        const ld = (node.params.lightDir as string) ?? "0.5,1.0,0.5";
+        const col = (node.params.color as string) ?? "1.0,0.0,0.0";
+        nodeCode.push(`  vec3 dl_n = normalize(${normal}.xyz);`);
+        nodeCode.push(`  vec3 dl_l = normalize(vec3(${ld}));`);
+        nodeCode.push(`  float dl_dot = max(dot(dl_n, dl_l), 0.0);`);
+        nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}) * dl_dot, 1.0);`);
+        break;
+      }
+      case "AmbientLight": {
+        const col = (node.params.color as string) ?? "0.1,0.0,0.0";
+        nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}), 1.0);`);
+        break;
+      }
       case "Output": {
         const input = inputVarMap.get("source") ?? "vec4(0.0)";
         nodeCode.push(`  gl_FragColor = ${input};`);
@@ -375,6 +401,10 @@ export function compileGraph(state: GraphState): CompiledShader {
     parts.push(`uniform float iTime;\n`);
   }
   parts.push(GLSL_UNIFORMS);
+  const varyings = externalVaryings ?? [];
+  for (const v of varyings) {
+    parts.push(`varying ${v.type} ${v.name};\n`);
+  }
   if (needsNoise) {
     parts.push(generateNoiseGLSL());
   }

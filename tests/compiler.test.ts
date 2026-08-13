@@ -348,6 +348,38 @@ describe("new primitives", () => {
       g = connect(g, nodes[2].id, "out", nodes[3].id, "angle");
       return connect(g, nodes[3].id, "out", nodes[4].id, "source");
     }));
+
+  it("DiffuseLight", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 1, b: 0, a: 0 });
+      g = addNode(g, "DiffuseLight", { lightDir: "1,1,1", color: "1,0,0" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "normal");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+    }));
+
+  it("AmbientLight", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "AmbientLight", { color: "0.1,0,0" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+    }));
+
+  it("DiffuseLight + AmbientLight combined", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 1, b: 0, a: 0 });
+      g = addNode(g, "DiffuseLight", { lightDir: "1,1,1", color: "1,0,0" });
+      g = addNode(g, "AmbientLight", { color: "0.05,0,0" });
+      g = addNode(g, "Add", {});
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "normal");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "a");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "b");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
+    }));
 });
 
 describe("compileGraph", () => {

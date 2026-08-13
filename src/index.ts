@@ -3,7 +3,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { listPrimitives } from "./graph/registry.js";
 import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
 import { validateGraph } from "./graph/validation.js";
-import { compileGraph, validateGLSL } from "./compiler/compile.js";
+import { compileGraph, validateGLSL, VaryingInfo as FragVarying } from "./compiler/compile.js";
 import { compileVertexGraph, validateGLSL as validateGLSLVert } from "./compiler/vertex.js";
 import { z } from "zod";
 
@@ -155,6 +155,27 @@ server.registerTool(
     }
     const validation = await validateGLSL(compiled.source);
     const response = `// GLSL compilation result:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
+    return { content: [{ type: "text", text: response }] };
+  },
+);
+
+server.registerTool(
+  "compile_pair",
+  {
+    description: "Compile both vertex and fragment graphs as a matched shader pair with varying passthrough",
+  },
+  async () => {
+    const vtxResult = compileVertexGraph(vtxGraph);
+    if (!vtxResult.valid) {
+      return { content: [{ type: "text", text: `Vertex graph: ${vtxResult.errors}` }], isError: true };
+    }
+    const fragResult = compileGraph(graph, vtxResult.varyings);
+    if (!fragResult.valid) {
+      return { content: [{ type: "text", text: `Fragment graph: ${fragResult.errors}` }], isError: true };
+    }
+    const vtxVal = await validateGLSLVert(vtxResult.source);
+    const fragVal = await validateGLSL(fragResult.source);
+    const response = `=== Vertex Shader ===\n// Valid: ${vtxVal.valid}\n${vtxResult.source}\n\n=== Fragment Shader ===\n// Valid: ${fragVal.valid}\n${fragResult.source}`;
     return { content: [{ type: "text", text: response }] };
   },
 );

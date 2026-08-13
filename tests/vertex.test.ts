@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { createGraph, addNode, connect } from "../src/graph/operations.js";
 import { compileVertexGraph, validateGLSL } from "../src/compiler/vertex.js";
+import { compileGraph, validateGLSL as validateGLSLFrag } from "../src/compiler/compile.js";
 
 async function testVertexShader(build: (g: ReturnType<typeof createGraph>) => ReturnType<typeof createGraph>): Promise<void> {
   let g = createGraph();
@@ -122,6 +123,48 @@ describe("vertex validation", () => {
     g = addNode(g, "VertexOutput", {});
     const result = compileVertexGraph(g);
     expect(result.valid).toBe(false);
+  });
+});
+
+describe("compile_pair", () => {
+  it("vertex + fragment with varying passthrough", async () => {
+    let vg = createGraph();
+    vg = addNode(vg, "VertexPosition", {});
+    vg = addNode(vg, "VertexNormal", {});
+    vg = addNode(vg, "PassToFragment", { name: "vNormal" });
+    vg = addNode(vg, "ModelViewProjection", {});
+    vg = addNode(vg, "VertexOutput", {});
+    const vnodes = [...vg.nodes.values()];
+    vg = connect(vg, vnodes[1].id, "out", vnodes[2].id, "value");
+    vg = connect(vg, vnodes[0].id, "out", vnodes[3].id, "position");
+    vg = connect(vg, vnodes[3].id, "out", vnodes[4].id, "position");
+    const vtxResult = compileVertexGraph(vg);
+    expect(vtxResult.valid).toBe(true);
+    expect(vtxResult.varyings?.length).toBe(1);
+    expect(vtxResult.varyings?.[0].name).toBe("vNormal");
+
+    let fg = createGraph();
+    fg = addNode(fg, "FromVertex", { name: "vNormal" });
+    fg = addNode(fg, "DiffuseLight", { lightDir: "1,1,1", color: "1,0,0" });
+    fg = addNode(fg, "AmbientLight", { color: "0.05,0,0" });
+    fg = addNode(fg, "Add", {});
+    fg = addNode(fg, "Output", {});
+    const fnodes = [...fg.nodes.values()];
+    fg = connect(fg, fnodes[0].id, "out", fnodes[1].id, "normal");
+    fg = connect(fg, fnodes[1].id, "out", fnodes[3].id, "a");
+    fg = connect(fg, fnodes[2].id, "out", fnodes[3].id, "b");
+    fg = connect(fg, fnodes[3].id, "out", fnodes[4].id, "source");
+    const fragResult = compileGraph(fg, vtxResult.varyings);
+    expect(fragResult.valid).toBe(true);
+
+    const vtxVal = await validateGLSL(vtxResult.source);
+    const fragVal = await validateGLSLFrag(fragResult.source);
+    expect(vtxVal.valid).toBe(true);
+    expect(fragVal.valid).toBe(true);
+
+    expect(vtxResult.source).toContain("varying vec4 vNormal");
+    expect(vtxResult.source).toContain("vNormal =");
+    expect(fragResult.source).toContain("varying vec4 vNormal");
   });
 });
 
