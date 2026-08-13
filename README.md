@@ -29,15 +29,15 @@ npm run dev                    # start the MCP server over stdio
 | `validate` | Run 4-category validation on the graph |
 | `compile` | Compile graph → GLSL, validate with glslangValidator |
 
-## Primitive catalogue (20 nodes)
+## Primitive catalogue (25 nodes)
 
 | Category | Nodes |
 |----------|-------|
-| **Sources** | Texture, Noise, SolidColor, Gradient, Checkerboard |
-| **Color** | BrightnessContrast, HueShift, Saturation, Invert, Threshold |
+| **Sources** | Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time** |
+| **Color** | BrightnessContrast, HueShift, Saturation, Invert, Threshold, **Palette** |
 | **Blend** | Mix, Add, Subtract, Multiply |
 | **Filter** | Blur, Glow, EdgeDetect, Displace |
-| **Utility** | Mask |
+| **Utility** | Mask, **SmoothStep** |
 | **Output** | Output |
 
 Each primitive has typed input/output ports and validated parameter ranges. The graph validates on four axes: type-checking, completeness, acyclicity, and parameter bounds.
