@@ -11,6 +11,7 @@ interface CompiledShader {
   source: string;
   valid: boolean;
   errors?: string;
+  metadata?: ShaderMetadata;
 }
 
 const GLSL_HEADER = `#version 100
@@ -140,6 +141,27 @@ vec4 sobel(sampler2D tex, vec2 uv, vec2 step) {
 export interface VaryingInfo {
   name: string;
   type: string;
+}
+
+export interface ShaderMetadata {
+  uniforms: { name: string; type: string; semantic: string }[];
+  varyings: { name: string; type: string }[];
+  output: string;
+}
+
+export function describeFragmentGraph(state: GraphState, externalVaryings?: VaryingInfo[]): ShaderMetadata {
+  const typeNames = [...state.nodes.values()].map((n) => n.typeName);
+  const uniforms = [{ name: "iResolution", type: "vec2", semantic: "resolution" }];
+  if (typeNames.includes("Time")) uniforms.push({ name: "iTime", type: "float", semantic: "time" });
+  const texCount = [...state.nodes.values()].filter((n) => n.typeName === "Texture" && !!(n.params.url as string)).length;
+  for (let i = 0; i < texCount; i++) uniforms.push({ name: `uTexture${i}`, type: "sampler2D", semantic: "texture" });
+  const needsBlurTex = [...state.nodes.values()].some((n) =>
+    (n.typeName === "Blur" || n.typeName === "EdgeDetect") &&
+    [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
+      state.nodes.get(e.fromNode)?.typeName === "Texture")
+  );
+  if (needsBlurTex) uniforms.push({ name: "uTexture0", type: "sampler2D", semantic: "texture" });
+  return { uniforms, varyings: externalVaryings ?? [], output: "gl_FragColor" };
 }
 
 export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader {
@@ -424,7 +446,8 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   parts.push(nodeCode.join("\n"));
   parts.push("}\n");
 
-  return { source: parts.join(""), valid: true };
+  const metadata = describeFragmentGraph(state, externalVaryings);
+  return { source: parts.join(""), valid: true, metadata };
 }
 
 export function validateGLSL(source: string): Promise<{ valid: boolean; output: string }> {

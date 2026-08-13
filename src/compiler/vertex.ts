@@ -11,6 +11,7 @@ interface CompiledShader {
   source: string;
   valid: boolean;
   errors?: string;
+  metadata?: ShaderMetadata;
 }
 
 const GLSL_HEADER = `#version 100
@@ -58,6 +59,34 @@ export interface VaryingInfo {
   name: string;
   type: string;
   sourceNodeId: string;
+}
+
+export interface ShaderMetadata {
+  attributes: { name: string; type: string; semantic: string }[];
+  uniforms: { name: string; type: string; semantic: string }[];
+  varyings: { name: string; type: string }[];
+  output: string;
+}
+
+export function describeVertexGraph(state: GraphState): ShaderMetadata {
+  const typeNames = [...state.nodes.values()].map((n) => n.typeName);
+  const hasAnimated = typeNames.includes("Wave") || typeNames.includes("NoiseDisplace") || typeNames.includes("Bend");
+  const uniforms = [{ name: "uModelViewProjection", type: "mat4", semantic: "modelViewProjection" }];
+  if (hasAnimated) uniforms.push({ name: "iTime", type: "float", semantic: "time" });
+  const varyings = [...state.nodes.values()]
+    .filter((n) => n.typeName === "PassToFragment")
+    .map((n) => ({ name: (n.params.name as string)?.replace(/[^a-zA-Z0-9_]/g, "_") ?? "vData", type: "vec4" }));
+  return {
+    attributes: [
+      { name: "aPosition", type: "vec3", semantic: "position" },
+      { name: "aNormal", type: "vec3", semantic: "normal" },
+      { name: "aTexCoord", type: "vec2", semantic: "texcoord" },
+      { name: "aColor", type: "vec4", semantic: "color" },
+    ],
+    uniforms,
+    varyings,
+    output: "gl_Position",
+  };
 }
 
 export function compileVertexGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader & { varyings?: VaryingInfo[] } {
@@ -213,7 +242,8 @@ export function compileVertexGraph(state: GraphState, externalVaryings?: Varying
   parts.push(nodeCode.join("\n"));
   parts.push("}\n");
 
-  return { source: parts.join(""), valid: true, varyings };
+  const metadata = describeVertexGraph(state);
+  return { source: parts.join(""), valid: true, varyings, metadata };
 }
 
 export function validateGLSL(source: string): Promise<{ valid: boolean; output: string }> {

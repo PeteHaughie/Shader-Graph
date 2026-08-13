@@ -3,8 +3,8 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { listPrimitives } from "./graph/registry.js";
 import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
 import { validateGraph } from "./graph/validation.js";
-import { compileGraph, validateGLSL, VaryingInfo as FragVarying } from "./compiler/compile.js";
-import { compileVertexGraph, validateGLSL as validateGLSLVert } from "./compiler/vertex.js";
+import { compileGraph, validateGLSL, describeFragmentGraph, VaryingInfo as FragVarying } from "./compiler/compile.js";
+import { compileVertexGraph, validateGLSL as validateGLSLVert, describeVertexGraph } from "./compiler/vertex.js";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -177,6 +177,38 @@ server.registerTool(
     const fragVal = await validateGLSL(fragResult.source);
     const response = `=== Vertex Shader ===\n// Valid: ${vtxVal.valid}\n${vtxResult.source}\n\n=== Fragment Shader ===\n// Valid: ${fragVal.valid}\n${fragResult.source}`;
     return { content: [{ type: "text", text: response }] };
+  },
+);
+
+server.registerTool(
+  "describe",
+  {
+    description: "Describe the current fragment graph — returns uniform/attribute/varying metadata",
+  },
+  async () => {
+    return { content: [{ type: "text", text: JSON.stringify(describeFragmentGraph(graph), null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "vtx_describe",
+  {
+    description: "Describe the current vertex graph — returns uniform/attribute/varying metadata",
+  },
+  async () => {
+    return { content: [{ type: "text", text: JSON.stringify(describeVertexGraph(vtxGraph), null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "describe_pair",
+  {
+    description: "Describe both graphs as a matched pair — returns combined metadata",
+  },
+  async () => {
+    const vtxMeta = describeVertexGraph(vtxGraph);
+    const fragMeta = describeFragmentGraph(graph, vtxMeta.varyings);
+    return { content: [{ type: "text", text: JSON.stringify({ vertex: vtxMeta, fragment: fragMeta }, null, 2) }] };
   },
 );
 
