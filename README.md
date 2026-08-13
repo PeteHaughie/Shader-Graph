@@ -132,8 +132,16 @@ Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons wi
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (67 tests)
+npm test            # vitest run (71 tests)
 ```
+
+## Future directions
+
+- **Compute shaders** — the same semantic graph model extends naturally to compute pipelines. Instead of a vertex→fragment pipeline, compute shaders have a dispatch grid (workgroups → invocations). Audio DSP on the GPU is a compelling application: oscillator → filter → envelope → output maps directly to a dataflow graph, with float buffers flowing between typed nodes instead of vec4 pixels.
+- **More compiler targets** — HLSL (DirectX), WGSL (WebGPU), Metal, SPIR-V. The semantic graph is target-agnostic; each target is a new code generator.
+- **Application-level semantic graphs** — extending the metaphor beyond shaders to frameworks like openFrameworks, where the graph describes application architecture (event-driven state machines, callbacks, GPU interaction) rather than per-pixel computation.
+- **Graph visualizer** — the MCP tools work, but a visual graph editor would make the graph explorable.
+- **Geodesic sphere benchmark** — subdividing the icosahedron at increasing levels for a smooth morph from rough to sphere.
 
 ## License
 
