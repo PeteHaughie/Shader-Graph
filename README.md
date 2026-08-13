@@ -40,7 +40,9 @@ npm run dev                    # start the MCP server over stdio
 | **Utility** | Mask, **SmoothStep** |
 | **Output** | Output |
 
-Each primitive has typed input/output ports and validated parameter ranges. The graph validates on four axes: type-checking, completeness, acyclicity, and parameter bounds.
+Each primitive has typed input/output ports and validated parameter ranges. Float and int parameters can also accept wired connections from any node's vec4 output (using the `.r` channel) — so `Time` can drive `Mix.factor`, `Blur.radius`, or `Gradient.angle` for animated effects.
+
+The graph validates on four axes: type-checking, completeness, acyclicity, and parameter bounds.
 
 ## Configure in opencode
 
@@ -61,14 +63,14 @@ Add to `~/.config/opencode/opencode.jsonc`:
 
 | Task | Graph | Text |
 |------|:-----:|:----:|
-| Lava Lamp | 95 | 79 |
-| Slow Lava | 100 | 69 |
-| Kaleidoscope | 95 | 79 |
-| Vignette | 100 | 84 |
-| Dreamy Blur | 100 | 74 |
-| **Average** | **98.0** | **69.8** |
+| Lava Lamp | **100** | 79 |
+| Slow Lava | **87** | 69 |
+| Kaleidoscope | **95** | 79 |
+| Vignette | **100** | 84 |
+| Dreamy Blur | **100** | 74 |
+| **Average** | **96.4** | **69.8** |
 
-Graph mode wins on reliability (100% compile rate vs 83%) and speed. Text mode wins on expressive power (custom noise, smoothstep, time animation). The sweet spot is a rich primitive catalogue with escape hatches for custom GLSL.
+Graph mode wins on reliability (100% compile rate vs 83%), speed (seconds vs minutes), and structural correctness. The primitive catalogue has been expanded to close the expressive gap — SmoothNoise, FractalNoise, Palette, Time, and float input ports now let the graph mode produce shaders that rival hand-written GLSL in sophistication (FBM noise, cosine color palettes, time-driven animation).
 
 Full report: `benchmark/REPORT.md`
 
@@ -103,7 +105,7 @@ tests/
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (39 tests)
+npm test            # vitest run (50 tests)
 ```
 
 ## License

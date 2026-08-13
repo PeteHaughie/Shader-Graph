@@ -25,6 +25,11 @@ function countPrimitives(source) {
     ["EdgeDetect", /sobel\s*\(/],
     ["Displace", /disp_offset|disp_uv/],
     ["Checkerboard", /cb\.x|mod\s*\(/],
+    ["SmoothNoise", /smoothNoise\s*\(/],
+    ["FractalNoise", /fbm\s*\(/],
+    ["Time", /iTime/],
+    ["SmoothStep", /smoothstep\s*\(/],
+    ["Palette", /palette\s*\(/],
   ];
   for (const [name, re] of patterns) {
     re.lastIndex = 0;
@@ -82,9 +87,11 @@ export async function scoreGLSL(source, task) {
   }
 
   const primitivesFound = countPrimitives(source);
-  const missingPrimitives = task.scoring.requiredPrimitives.filter(
-    (p) => !primitivesFound.includes(p),
-  );
+  const aliasMap = { Noise: ["Noise", "SmoothNoise", "FractalNoise"], HueShift: ["HueShift", "Palette"] };
+  const missingPrimitives = task.scoring.requiredPrimitives.filter((p) => {
+    const aliases = aliasMap[p] ?? [p];
+    return !aliases.some((a) => primitivesFound.includes(a));
+  });
   const nodeCount = countGLSLNodes(source);
   const paramViolations = findParamViolations(source);
 

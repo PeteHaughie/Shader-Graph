@@ -1,23 +1,23 @@
 # Benchmark Results
 
-Run on: 2026-08-13T16:02:31.808Z
+Run on: 2026-08-13T16:45:57.915Z
 Total runs: 11
 
 ## Summary
 
 | Task | Mode | Compiles? | Primitives | Nodes | Params OK | Score |
 |------|------|-----------|------------|-------|-----------|-------|
-| Lava Lamp | graph | Yes | Missing: Glow | 8 | Yes | 95/100 |
 | Lava Lamp | text | Yes | Missing: Glow | 1 | Yes | 79/100 |
 | Slow Lava | text | No | Missing: Noise, HueShift | 1 | Yes | 34/100 |
-| Slow Lava | graph | Yes | All 9 | 4 | Yes | 100/100 |
-| Kaleidoscope Refactor | graph | Yes | Missing: Texture | 8 | Yes | 95/100 |
-| Vignette Addition | graph | Yes | All 6 | 6 | Yes | 100/100 |
 | Kaleidoscope Refactor | text | Yes | Missing: Texture | 1 | Yes | 79/100 |
 | Vignette Addition | text | Yes | All 5 | 1 | Yes | 84/100 |
 | Slow Lava | text | Yes | Missing: Noise, HueShift, BrightnessContrast | 1 | Yes | 69/100 |
-| Dreamy Blur | graph | Yes | All 8 | 3 | Yes | 100/100 |
 | Dreamy Blur | text | Yes | Missing: Texture, Blur | 1 | Yes | 74/100 |
+| Lava Lamp | graph | Yes | All 11 | 8 | Yes | 100/100 |
+| Slow Lava | graph | Yes | Missing: BrightnessContrast | 3 | Yes | 87/100 |
+| Kaleidoscope Refactor | graph | Yes | Missing: Texture | 8 | Yes | 95/100 |
+| Vignette Addition | graph | Yes | All 6 | 6 | Yes | 100/100 |
+| Dreamy Blur | graph | Yes | All 7 | 3 | Yes | 100/100 |
 
 ## Scoring
 
@@ -32,7 +32,7 @@ Total runs: 11
 
 | Metric | Graph (Mode A) | Text (Mode B) |
 |--------|---------------|---------------|
-| Average score | 98.0 | 69.8 |
+| Average score | 96.4 | 69.8 |
 | Compile rate | 100% | 83% |
 
 ## Detailed Results
@@ -42,17 +42,6 @@ Total runs: 11
 Tests complex topology — can the AI wire a multi-node graph correctly?
 
 Required: Noise, Mix, Glow (min 5 nodes)
-
-#### Graph (Mode A)
-
-- **Score:** 95/100
-- **Compiles:** Yes
-- **Primitives:** Noise, Mix, Add, Multiply
-- **Nodes:** 8
-- **Params in range:** Yes
-- **Iterations:** 116
-- **Time:** 120s
-- **Notes:** Three noise layers at scales 2,5,10 blended through 3 Mix nodes. No Glow (Blur is pass-through). No color tinting.
 
 #### Text (Mode B)
 
@@ -64,6 +53,16 @@ Required: Noise, Mix, Glow (min 5 nodes)
 - **Iterations:** 2
 - **Time:** 45s
 - **Notes:** Wrote GLSL directly in 2 iterations. More sophisticated output (smoothstep, time animation, proper color) but node count metric penalizes compact code.
+
+#### Graph (Mode A)
+
+- **Score:** 100/100
+- **Compiles:** Yes
+- **Primitives:** Mix, Glow, SolidColor, HueShift, Threshold, Add, Subtract, Multiply, SmoothNoise, FractalNoise, Palette
+- **Nodes:** 8
+- **Params in range:** Yes
+- **Time:** 1s
+- **Notes:** SmoothNoise(2,5,10) -> Mix -> Palette(fire) -> Glow -> Output
 
 ### Slow Lava
 
@@ -82,17 +81,6 @@ Required: Noise, HueShift, BrightnessContrast (min 4 nodes)
 - **Time:** 45s
 - **Notes:** Sub-agent wrote GLSL directly. Uses u_time which isnt declared. Custom noise functions.
 
-#### Graph (Mode A)
-
-- **Score:** 100/100
-- **Compiles:** Yes
-- **Primitives:** Noise, HueShift, BrightnessContrast, Mix, Add, Subtract, Multiply, Threshold, SolidColor
-- **Nodes:** 4
-- **Params in range:** Yes
-- **Iterations:** 11
-- **Time:** 1s
-- **Notes:** Noise(scale=4) -> HueShift(angle=30) -> BrightnessContrast(brightness=0.1,contrast=0.4) -> Output. Perfect score.
-
 #### Text (Mode B)
 
 - **Score:** 69/100
@@ -104,22 +92,21 @@ Required: Noise, HueShift, BrightnessContrast (min 4 nodes)
 - **Time:** 90s
 - **Notes:** Custom 4-octave FBM noise with 4-stop color ramp. Uses iTime for animation. Scoring fails to detect custom noise (not noise1d).
 
+#### Graph (Mode A)
+
+- **Score:** 87/100
+- **Compiles:** Yes
+- **Primitives:** Mix, SolidColor, HueShift, Threshold, Add, Subtract, Multiply, SmoothNoise, FractalNoise, Palette
+- **Nodes:** 3
+- **Params in range:** Yes
+- **Time:** 1s
+- **Notes:** FractalNoise(4-octave) -> Palette(fire) -> Output
+
 ### Kaleidoscope Refactor
 
 Tests structural reasoning — can the AI rewire a graph by inserting new nodes?
 
 Required: Gradient, Mix, Texture (min 5 nodes)
-
-#### Graph (Mode A)
-
-- **Score:** 95/100
-- **Compiles:** Yes
-- **Primitives:** Mix, SolidColor, Gradient, Add, Multiply, Checkerboard
-- **Nodes:** 8
-- **Params in range:** Yes
-- **Iterations:** 16
-- **Time:** 1s
-- **Notes:** Gradient(blue->orange,45deg) + Checkerboard(4) blended via Mix(0.7). Missing Texture primitive but Texture isnt needed for kaleidoscope.
 
 #### Text (Mode B)
 
@@ -132,22 +119,21 @@ Required: Gradient, Mix, Texture (min 5 nodes)
 - **Time:** 45s
 - **Notes:** Wrote GLSL directly. Used abs(uv-0.5)*2.0 for kaleidoscope mirroring. Compact code (1 variable).
 
+#### Graph (Mode A)
+
+- **Score:** 95/100
+- **Compiles:** Yes
+- **Primitives:** Mix, SolidColor, Gradient, Add, Multiply, Checkerboard
+- **Nodes:** 8
+- **Params in range:** Yes
+- **Time:** 1s
+- **Notes:** Gradient(blue->orange) + Checkerboard(4) -> Mix(0.7) -> Output
+
 ### Vignette Addition
 
 Tests surgical precision — can the AI make targeted changes without collateral damage?
 
 Required: Noise, Multiply (min 3 nodes)
-
-#### Graph (Mode A)
-
-- **Score:** 100/100
-- **Compiles:** Yes
-- **Primitives:** Noise, Mix, SolidColor, Gradient, Add, Multiply
-- **Nodes:** 6
-- **Params in range:** Yes
-- **Iterations:** 14
-- **Time:** 1s
-- **Notes:** Noise(scale=3) * Gradient(white->black, horizontal) via Multiply. Linear gradient vignette approximation.
 
 #### Text (Mode B)
 
@@ -160,22 +146,21 @@ Required: Noise, Multiply (min 3 nodes)
 - **Time:** 15s
 - **Notes:** Added vignette = 1.0 - length(uv-0.5)*0.8 clamped to [0.5,1.0] as multiplier. 1 iteration, compiled first time.
 
+#### Graph (Mode A)
+
+- **Score:** 100/100
+- **Compiles:** Yes
+- **Primitives:** Noise, Mix, SolidColor, Gradient, Add, Multiply
+- **Nodes:** 6
+- **Params in range:** Yes
+- **Time:** 1s
+- **Notes:** Noise(3) * Gradient(white->black) via Multiply -> Output
+
 ### Dreamy Blur
 
 Tests the Blur primitive specifically — can the AI wire it with appropriate parameters?
 
 Required: Texture, Blur (min 3 nodes)
-
-#### Graph (Mode A)
-
-- **Score:** 100/100
-- **Compiles:** Yes
-- **Primitives:** Noise, Blur, Texture, SolidColor, Gradient, Add, Subtract, Multiply
-- **Nodes:** 3
-- **Params in range:** Yes
-- **Iterations:** 6
-- **Time:** 120s
-- **Notes:** Noise(scale=8) -> Blur(radius=10) -> Output. 3x3 box blur sampling uTexture. Noise node is computed but unused (Blur samples texture directly).
 
 #### Text (Mode B)
 
@@ -187,4 +172,14 @@ Required: Texture, Blur (min 3 nodes)
 - **Iterations:** 3
 - **Time:** 60s
 - **Notes:** Custom smooth noise with inline 3x3 blur loop. More sophisticated noise (smoothstep interpolation) but scoring fails to detect custom implementations.
+
+#### Graph (Mode A)
+
+- **Score:** 100/100
+- **Compiles:** Yes
+- **Primitives:** Blur, Texture, SolidColor, Gradient, Add, Subtract, Multiply
+- **Nodes:** 3
+- **Params in range:** Yes
+- **Time:** 1s
+- **Notes:** Texture -> Blur(radius=10) -> Output. Real 3x3 box blur on uTexture.
 
