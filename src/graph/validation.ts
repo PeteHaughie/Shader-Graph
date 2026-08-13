@@ -68,12 +68,13 @@ export function validateGraph(state: GraphState): ValidationResult {
     }
   }
 
-  const hasOutput = [...state.nodes.values()].some((n) => n.typeName === "Output");
+  const outputTypes = ["Output", "VertexOutput"];
+  const hasOutput = [...state.nodes.values()].some((n) => outputTypes.includes(n.typeName));
   if (!hasOutput) {
-    errors.push({ message: "Graph has no Output node. An Output node is required." });
+    errors.push({ message: "Graph has no Output node. An Output or VertexOutput node is required." });
   }
 
-  const outputNode = [...state.nodes.values()].find((n) => n.typeName === "Output");
+  const outputNode = [...state.nodes.values()].find((n) => outputTypes.includes(n.typeName));
   if (outputNode) {
     const outputEdges = [...state.edges.values()].filter((e) => e.toNode === outputNode.id);
     if (outputEdges.length === 0) {

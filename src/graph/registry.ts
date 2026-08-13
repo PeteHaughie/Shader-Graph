@@ -1,13 +1,15 @@
-import { PrimitiveDefinition, PortType } from "./primitives.js";
+import { PrimitiveDefinition, PortType, GraphType } from "./primitives.js";
 
 const PRIMITIVES: PrimitiveDefinition[] = [
   {
+    graphType: GraphType.Fragment,
     typeName: "Texture",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "url", type: "string", default: "" }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Noise",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -17,6 +19,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "SmoothNoise",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -26,6 +29,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "FractalNoise",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -38,6 +42,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "SolidColor",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -49,6 +54,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Gradient",
     inputs: [
       { name: "colorA", type: PortType.Vec4 },
@@ -58,6 +64,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Checkerboard",
     inputs: [
       { name: "colorA", type: PortType.Vec4 },
@@ -67,24 +74,28 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [{ name: "frequency", type: "float", default: 4, min: 0.1, max: 50, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Blur",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "radius", type: "float", default: 2, min: 0, max: 50, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Glow",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "intensity", type: "float", default: 1, min: 0, max: 5, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "EdgeDetect",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "strength", type: "float", default: 1, min: 0, max: 5, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Displace",
     inputs: [
       { name: "image", type: PortType.Vec4 },
@@ -94,6 +105,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [{ name: "amount", type: "float", default: 0.05, min: 0, max: 1, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "BrightnessContrast",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -103,36 +115,42 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "HueShift",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Saturation",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "amount", type: "float", default: 1, min: 0, max: 2, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Invert",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Threshold",
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "level", type: "float", default: 0.5, min: 0, max: 1, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Time",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "speed", type: "float", default: 1, min: 0, max: 10, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "SmoothStep",
     inputs: [
       { name: "value", type: PortType.Vec4 },
@@ -143,12 +161,14 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Palette",
     inputs: [{ name: "value", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "mode", type: "string", default: "fire" }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Mix",
     inputs: [
       { name: "a", type: PortType.Vec4 },
@@ -158,6 +178,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [{ name: "factor", type: "float", default: 0.5, min: 0, max: 1, isInput: true }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Add",
     inputs: [
       { name: "a", type: PortType.Vec4 },
@@ -167,6 +188,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Subtract",
     inputs: [
       { name: "a", type: PortType.Vec4 },
@@ -176,6 +198,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Multiply",
     inputs: [
       { name: "a", type: PortType.Vec4 },
@@ -185,6 +208,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Mask",
     inputs: [
       { name: "image", type: PortType.Vec4 },
@@ -194,8 +218,115 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [{ name: "invert", type: "int", default: 0, min: 0, max: 1 }],
   },
   {
+    graphType: GraphType.Fragment,
     typeName: "Output",
     inputs: [{ name: "source", type: PortType.Vec4 }],
+    outputs: [],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "VertexPosition",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "VertexNormal",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "VertexTexCoord",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "VertexColor",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "Translate",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "x", type: "float", default: 0, min: -10, max: 10, isInput: true },
+      { name: "y", type: "float", default: 0, min: -10, max: 10, isInput: true },
+      { name: "z", type: "float", default: 0, min: -10, max: 10, isInput: true },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "Rotate",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true },
+      { name: "axis", type: "string", default: "y" },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "Scale",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "x", type: "float", default: 1, min: 0, max: 10, isInput: true },
+      { name: "y", type: "float", default: 1, min: 0, max: 10, isInput: true },
+      { name: "z", type: "float", default: 1, min: 0, max: 10, isInput: true },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "ModelViewProjection",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "Wave",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "amplitude", type: "float", default: 0.5, min: 0, max: 5, isInput: true },
+      { name: "frequency", type: "float", default: 2, min: 0, max: 10, isInput: true },
+      { name: "speed", type: "float", default: 1, min: 0, max: 5, isInput: true },
+      { name: "axis", type: "string", default: "z" },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "NoiseDisplace",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "amount", type: "float", default: 0.5, min: 0, max: 5, isInput: true },
+      { name: "scale", type: "float", default: 2, min: 0, max: 10, isInput: true },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "Bend",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "angle", type: "float", default: 30, min: 0, max: 180, isInput: true },
+      { name: "axis", type: "string", default: "y" },
+    ],
+  },
+  {
+    graphType: GraphType.Vertex,
+    typeName: "VertexOutput",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
     outputs: [],
     params: [],
   },

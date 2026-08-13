@@ -4,6 +4,7 @@ import { listPrimitives } from "./graph/registry.js";
 import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
 import { validateGraph } from "./graph/validation.js";
 import { compileGraph, validateGLSL } from "./compiler/compile.js";
+import { compileVertexGraph, validateGLSL as validateGLSLVert } from "./compiler/vertex.js";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -12,6 +13,7 @@ const server = new McpServer({
 });
 
 let graph = createGraph();
+let vtxGraph = createGraph();
 
 server.registerTool(
   "list_primitives",
@@ -153,6 +155,126 @@ server.registerTool(
     }
     const validation = await validateGLSL(compiled.source);
     const response = `// GLSL compilation result:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
+    return { content: [{ type: "text", text: response }] };
+  },
+);
+
+// --- Vertex graph tools ---
+
+server.registerTool(
+  "vtx_list_primitives",
+  {
+    description: "List available vertex shader primitive types",
+  },
+  async () => {
+    return {
+      content: [{ type: "text", text: JSON.stringify(listPrimitives().filter((p) => p.graphType === "vertex"), null, 2) }],
+    };
+  },
+);
+
+server.registerTool(
+  "vtx_inspect_graph",
+  {
+    description: "View the current vertex graph state",
+  },
+  async () => {
+    const nodes = [...vtxGraph.nodes.values()].map((n) => ({ id: n.id, type: n.typeName, params: n.params }));
+    const edges = [...vtxGraph.edges.values()].map((e) => ({ id: e.id, from: `${e.fromNode}:${e.fromPort}`, to: `${e.toNode}:${e.toPort}` }));
+    return { content: [{ type: "text", text: JSON.stringify({ id: vtxGraph.id, nodes, edges }, null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "vtx_add_node",
+  {
+    description: "Add a vertex primitive node",
+    inputSchema: z.object({
+      typeName: z.string().describe("Vertex primitive type name"),
+      params: z.record(z.string(), z.unknown()).default({}).describe("Node parameters"),
+    }),
+  },
+  async ({ typeName, params }) => {
+    vtxGraph = addNode(vtxGraph, typeName, params);
+    return { content: [{ type: "text", text: JSON.stringify({ id: vtxGraph.id, nodeId: [...vtxGraph.nodes.keys()].pop() }, null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "vtx_remove_node",
+  {
+    description: "Remove a vertex node and its connections",
+    inputSchema: z.object({ nodeId: z.string().describe("Node ID to remove") }),
+  },
+  async ({ nodeId }) => {
+    vtxGraph = removeNode(vtxGraph, nodeId);
+    return { content: [{ type: "text", text: `Removed vertex node ${nodeId}` }] };
+  },
+);
+
+server.registerTool(
+  "vtx_connect",
+  {
+    description: "Connect two vertex nodes",
+    inputSchema: z.object({
+      fromNode: z.string(), fromPort: z.string(), toNode: z.string(), toPort: z.string(),
+    }),
+  },
+  async ({ fromNode, fromPort, toNode, toPort }) => {
+    vtxGraph = connect(vtxGraph, fromNode, fromPort, toNode, toPort);
+    return { content: [{ type: "text", text: `Connected ${fromNode}:${fromPort} → ${toNode}:${toPort}` }] };
+  },
+);
+
+server.registerTool(
+  "vtx_disconnect",
+  {
+    description: "Remove a vertex connection by edge ID",
+    inputSchema: z.object({ edgeId: z.string() }),
+  },
+  async ({ edgeId }) => {
+    vtxGraph = disconnect(vtxGraph, edgeId);
+    return { content: [{ type: "text", text: `Removed vertex edge ${edgeId}` }] };
+  },
+);
+
+server.registerTool(
+  "vtx_set_parameter",
+  {
+    description: "Change a vertex node parameter",
+    inputSchema: z.object({
+      nodeId: z.string(), name: z.string(), value: z.union([z.number(), z.string()]),
+    }),
+  },
+  async ({ nodeId, name, value }) => {
+    vtxGraph = setParameter(vtxGraph, nodeId, name, value);
+    return { content: [{ type: "text", text: `Set vertex ${nodeId}:${name} = ${value}` }] };
+  },
+);
+
+server.registerTool(
+  "vtx_validate",
+  {
+    description: "Validate the current vertex graph",
+  },
+  async () => {
+    const result = validateGraph(vtxGraph);
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
+  },
+);
+
+server.registerTool(
+  "vtx_compile",
+  {
+    description: "Compile the vertex graph to GLSL vertex shader and validate",
+  },
+  async () => {
+    const compiled = compileVertexGraph(vtxGraph);
+    if (!compiled.valid) {
+      return { content: [{ type: "text", text: compiled.errors ?? "Unknown error" }], isError: true };
+    }
+    const validation = await validateGLSLVert(compiled.source);
+    const response = `// Vertex shader compilation:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
     return { content: [{ type: "text", text: response }] };
   },
 );

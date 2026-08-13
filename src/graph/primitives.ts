@@ -17,8 +17,14 @@ export interface ParamSpec {
   isInput?: boolean;
 }
 
+export enum GraphType {
+  Fragment = "fragment",
+  Vertex = "vertex",
+}
+
 export interface PrimitiveDefinition {
   typeName: string;
+  graphType: GraphType;
   inputs: PortSpec[];
   outputs: PortSpec[];
   params: ParamSpec[];
