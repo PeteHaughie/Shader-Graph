@@ -1,7 +1,7 @@
 # Benchmark Results
 
-Run on: 2026-08-13T16:51:42.259Z
-Total runs: 11
+Run on: 2026-08-13T20:34:07.385Z
+Total runs: 13
 
 ## Summary
 
@@ -18,6 +18,8 @@ Total runs: 11
 | Kaleidoscope Refactor | graph | Yes | All 6 | 8 | Yes | 100/100 |
 | Vignette Addition | graph | Yes | All 6 | 6 | Yes | 100/100 |
 | Dreamy Blur | graph | Yes | All 7 | 3 | Yes | 100/100 |
+| DVD Interlace | graph | Yes | All 2 | 5 | Yes | 100/100 |
+| DVD Interlace | text | Yes | All 5 | 1 | Yes | 84/100 |
 
 ## Scoring
 
@@ -32,8 +34,8 @@ Total runs: 11
 
 | Metric | Graph (Mode A) | Text (Mode B) |
 |--------|---------------|---------------|
-| Average score | 100.0 | 69.8 |
-| Compile rate | 100% | 83% |
+| Average score | 100.0 | 71.9 |
+| Compile rate | 100% | 86% |
 
 ## Detailed Results
 
@@ -182,4 +184,32 @@ Required: Texture, Blur (min 3 nodes)
 - **Params in range:** Yes
 - **Time:** 1s
 - **Notes:** Texture -> Blur(radius=10) -> Output. Real 3x3 box blur on uTexture.
+
+### DVD Interlace
+
+Tests per-pixel coordinate logic — can the AI compose mod/floor/offset effects from available primitives?
+
+Required: Texture (min 2 nodes)
+
+#### Graph (Mode A)
+
+- **Score:** 100/100
+- **Compiles:** Yes
+- **Primitives:** Texture, Checkerboard
+- **Nodes:** 5
+- **Params in range:** Yes
+- **Iterations:** 8
+- **Time:** 2s
+- **Notes:** FragCoord -> Floor -> Mod(divisor=2) -> Texture.uv. Alternates between (0,0) and (1,1) UV per pixel. Approximates interlacing.
+
+#### Text (Mode B)
+
+- **Score:** 84/100
+- **Compiles:** Yes
+- **Primitives:** Texture, Gradient, Add, Multiply, Checkerboard
+- **Nodes:** 1
+- **Params in range:** Yes
+- **Iterations:** 2
+- **Time:** 30s
+- **Notes:** Exact interlacing: mod(row,2) * 0.5/iResolution.x offset. Uses floor + mod + precise offset.
 

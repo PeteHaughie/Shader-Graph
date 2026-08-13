@@ -4,7 +4,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
   {
     graphType: GraphType.Fragment,
     typeName: "Texture",
-    inputs: [],
+    inputs: [{ name: "uv", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "url", type: "string", default: "" }],
   },
@@ -148,6 +148,27 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "speed", type: "float", default: 1, min: 0, max: 10, isInput: true }],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "FragCoord",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "Floor",
+    inputs: [{ name: "value", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "Mod",
+    inputs: [{ name: "value", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "divisor", type: "float", default: 2, min: 0.01, max: 100, isInput: true }],
   },
   {
     graphType: GraphType.Fragment,

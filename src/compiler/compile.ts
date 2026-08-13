@@ -220,12 +220,29 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
     switch (node.typeName) {
       case "Texture": {
         const url = node.params.url as string;
+        const uvInput = inputVarMap.get("uv");
+        const defaultUV = "gl_FragCoord.xy / iResolution";
+        const uv = uvInput ? `${uvInput}.xy` : defaultUV;
         if (url) {
           const ti = textureIndexMap.get(node.id) ?? 0;
-          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, gl_FragCoord.xy / iResolution);`);
+          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, ${uv});`);
         } else {
-          nodeCode.push(`  vec4 ${varName} = vec4(gl_FragCoord.xy / iResolution, 0.0, 1.0);`);
+          nodeCode.push(`  vec4 ${varName} = vec4(${uv}, 0.0, 1.0);`);
         }
+        break;
+      }
+      case "FragCoord": {
+        nodeCode.push(`  vec4 ${varName} = vec4(gl_FragCoord.xy, 0.0, 1.0);`);
+        break;
+      }
+      case "Floor": {
+        const fInput = inputVarMap.get("value") ?? "vec4(0.0)";
+        nodeCode.push(`  vec4 ${varName} = floor(${fInput});`);
+        break;
+      }
+      case "Mod": {
+        const mInput = inputVarMap.get("value") ?? "vec4(0.0)";
+        nodeCode.push(`  vec4 ${varName} = mod(${mInput}, ${wiredParam(inputVarMap, node.params, "divisor", 2)});`);
         break;
       }
       case "Noise": {

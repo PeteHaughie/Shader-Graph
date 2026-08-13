@@ -48,5 +48,15 @@
       "minNodes": 3,
       "description": "Tests the Blur primitive specifically — can the AI wire it with appropriate parameters?"
     }
+  },
+  {
+    "id": "interlace",
+    "name": "DVD Interlace",
+    "brief": "Create a fragment shader that applies DVD-style MPEG frame interlacing artefacts to a texture input. The output should show a combing effect where alternating horizontal rows are offset by half a pixel. Use gl_FragCoord.y to determine the row — even rows should be shifted half a pixel to the right, odd rows should not be shifted. The effect should look like classic interlaced video: a characteristic sawtooth/comb edge pattern on diagonal lines.",
+    "scoring": {
+      "requiredPrimitives": ["Texture"],
+      "minNodes": 2,
+      "description": "Tests per-pixel coordinate logic — can the AI compose mod/floor/offset effects from available primitives?"
+    }
   }
 ]

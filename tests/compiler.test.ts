@@ -18,10 +18,12 @@ async function testPrimitive(build: (g: ReturnType<typeof createGraph>) => Retur
 describe("all primitives compile to valid GLSL", () => {
   it("Texture (procedural)", () =>
     testPrimitive((g) => {
+      g = addNode(g, "FragCoord", {});
       g = addNode(g, "Texture", { url: "" });
       g = addNode(g, "Output", {});
       const nodes = [...g.nodes.values()];
-      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "uv");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
     }));
 
   it("Noise", () =>
@@ -86,24 +88,28 @@ describe("all primitives compile to valid GLSL", () => {
 
   it("EdgeDetect", () =>
     testPrimitive((g) => {
+      g = addNode(g, "FragCoord", {});
       g = addNode(g, "Texture", { url: "" });
       g = addNode(g, "EdgeDetect", { strength: 1 });
       g = addNode(g, "Output", {});
       const nodes = [...g.nodes.values()];
-      g = connect(g, nodes[0].id, "out", nodes[1].id, "image");
-      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "uv");
+      g = connect(g, nodes[1].id, "out", nodes[2].id, "image");
+      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
     }));
 
   it("Displace", () =>
     testPrimitive((g) => {
-      g = addNode(g, "Texture", { url: "" });
-      g = addNode(g, "Noise", { scale: 1, seed: 0 });
-      g = addNode(g, "Displace", { amount: 0.1 });
-      g = addNode(g, "Output", {});
-      const nodes = [...g.nodes.values()];
-      g = connect(g, nodes[0].id, "out", nodes[2].id, "image");
-      g = connect(g, nodes[1].id, "out", nodes[2].id, "map");
-      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+      const ids = {};
+      g = addNode(g, "FragCoord", {}); ids.fc = [...g.nodes.keys()].pop();
+      g = addNode(g, "Texture", { url: "" }); ids.tx = [...g.nodes.keys()].pop();
+      g = addNode(g, "Noise", { scale: 1, seed: 0 }); ids.ns = [...g.nodes.keys()].pop();
+      g = addNode(g, "Displace", { amount: 0.1 }); ids.dp = [...g.nodes.keys()].pop();
+      g = addNode(g, "Output", {}); ids.out = [...g.nodes.keys()].pop();
+      g = connect(g, ids.fc, "out", ids.tx, "uv");
+      g = connect(g, ids.tx, "out", ids.dp, "image");
+      g = connect(g, ids.ns, "out", ids.dp, "map");
+      return connect(g, ids.dp, "out", ids.out, "source");
     }));
 
   it("BrightnessContrast", () =>
@@ -325,14 +331,16 @@ describe("new primitives", () => {
 
   it("Time wired to Blur.radius for animated blur", () =>
     testPrimitive((g) => {
+      g = addNode(g, "FragCoord", {});
       g = addNode(g, "Texture", { url: "" });
       g = addNode(g, "Time", { speed: 1 });
       g = addNode(g, "Blur", { radius: 2 });
       g = addNode(g, "Output", {});
       const nodes = [...g.nodes.values()];
-      g = connect(g, nodes[0].id, "out", nodes[2].id, "image");
-      g = connect(g, nodes[1].id, "out", nodes[2].id, "radius");
-      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "uv");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "image");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "radius");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
     }));
 
   it("Time wired to Gradient.angle for rotating gradient", () =>
