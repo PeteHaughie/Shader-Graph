@@ -1,7 +1,7 @@
 # Benchmark Results
 
-Run on: 2026-08-13T15:52:19.855Z
-Total runs: 9
+Run on: 2026-08-13T16:02:31.808Z
+Total runs: 11
 
 ## Summary
 
@@ -16,6 +16,8 @@ Total runs: 9
 | Kaleidoscope Refactor | text | Yes | Missing: Texture | 1 | Yes | 79/100 |
 | Vignette Addition | text | Yes | All 5 | 1 | Yes | 84/100 |
 | Slow Lava | text | Yes | Missing: Noise, HueShift, BrightnessContrast | 1 | Yes | 69/100 |
+| Dreamy Blur | graph | Yes | All 8 | 3 | Yes | 100/100 |
+| Dreamy Blur | text | Yes | Missing: Texture, Blur | 1 | Yes | 74/100 |
 
 ## Scoring
 
@@ -30,8 +32,8 @@ Total runs: 9
 
 | Metric | Graph (Mode A) | Text (Mode B) |
 |--------|---------------|---------------|
-| Average score | 97.5 | 69.0 |
-| Compile rate | 100% | 80% |
+| Average score | 98.0 | 69.8 |
+| Compile rate | 100% | 83% |
 
 ## Detailed Results
 
@@ -157,4 +159,32 @@ Required: Noise, Multiply (min 3 nodes)
 - **Iterations:** 1
 - **Time:** 15s
 - **Notes:** Added vignette = 1.0 - length(uv-0.5)*0.8 clamped to [0.5,1.0] as multiplier. 1 iteration, compiled first time.
+
+### Dreamy Blur
+
+Tests the Blur primitive specifically — can the AI wire it with appropriate parameters?
+
+Required: Texture, Blur (min 3 nodes)
+
+#### Graph (Mode A)
+
+- **Score:** 100/100
+- **Compiles:** Yes
+- **Primitives:** Noise, Blur, Texture, SolidColor, Gradient, Add, Subtract, Multiply
+- **Nodes:** 3
+- **Params in range:** Yes
+- **Iterations:** 6
+- **Time:** 120s
+- **Notes:** Noise(scale=8) -> Blur(radius=10) -> Output. 3x3 box blur sampling uTexture. Noise node is computed but unused (Blur samples texture directly).
+
+#### Text (Mode B)
+
+- **Score:** 74/100
+- **Compiles:** Yes
+- **Primitives:** Mix, SolidColor, Gradient, Add, Subtract, Multiply
+- **Nodes:** 1
+- **Params in range:** Yes
+- **Iterations:** 3
+- **Time:** 60s
+- **Notes:** Custom smooth noise with inline 3x3 blur loop. More sophisticated noise (smoothstep interpolation) but scoring fails to detect custom implementations.
 

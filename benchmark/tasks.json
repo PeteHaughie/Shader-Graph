@@ -38,5 +38,15 @@
       "minNodes": 3,
       "description": "Tests surgical precision — can the AI make targeted changes without collateral damage?"
     }
+  },
+  {
+    "id": "dreamy-blur",
+    "name": "Dreamy Blur",
+    "brief": "Create a soft, dreamy shader. Start with a procedural texture source, then apply a strong blur (radius 8 or higher). The output should look hazy and out-of-focus, like looking through frosted glass.",
+    "scoring": {
+      "requiredPrimitives": ["Texture", "Blur"],
+      "minNodes": 3,
+      "description": "Tests the Blur primitive specifically — can the AI wire it with appropriate parameters?"
+    }
   }
 ]
