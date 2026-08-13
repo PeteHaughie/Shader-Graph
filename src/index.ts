@@ -3,6 +3,7 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { listPrimitives } from "./graph/registry.js";
 import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
 import { validateGraph } from "./graph/validation.js";
+import { compileGraph, validateGLSL } from "./compiler/compile.js";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -134,6 +135,25 @@ server.registerTool(
     return {
       content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
     };
+  },
+);
+
+server.registerTool(
+  "compile",
+  {
+    description: "Compile the current graph to GLSL and validate the output",
+  },
+  async () => {
+    const compiled = compileGraph(graph);
+    if (!compiled.valid) {
+      return {
+        content: [{ type: "text", text: compiled.errors ?? "Unknown compilation error" }],
+        isError: true,
+      };
+    }
+    const validation = await validateGLSL(compiled.source);
+    const response = `// GLSL compilation result:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
+    return { content: [{ type: "text", text: response }] };
   },
 );
 
