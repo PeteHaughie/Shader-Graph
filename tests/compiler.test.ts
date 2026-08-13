@@ -407,6 +407,43 @@ describe("compileGraph", () => {
   });
 });
 
+describe("new features", () => {
+  it("SpecularLight", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 1, b: 0, a: 0 });
+      g = addNode(g, "SolidColor", { r: 0, g: 0, b: 1, a: 0 });
+      g = addNode(g, "SolidColor", { r: 1, g: 1, b: 0, a: 0 });
+      g = addNode(g, "SpecularLight", { shininess: 64, color: "1,1,1" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[3].id, "normal");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "viewDir");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "lightDir");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
+    }));
+
+  it("SpecularLight + DiffuseLight + AmbientLight combined", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 1, b: 0, a: 0 });
+      g = addNode(g, "DiffuseLight", { lightDir: "1,1,1", color: "1,0,0" });
+      g = addNode(g, "SpecularLight", { shininess: 32, color: "1,1,1" });
+      g = addNode(g, "AmbientLight", { color: "0.05,0,0" });
+      g = addNode(g, "Add", {});
+      g = addNode(g, "Add", {});
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "normal");
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "normal");
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "viewDir");
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "lightDir");
+      g = connect(g, nodes[1].id, "out", nodes[4].id, "a");
+      g = connect(g, nodes[2].id, "out", nodes[4].id, "b");
+      g = connect(g, nodes[4].id, "out", nodes[5].id, "a");
+      g = connect(g, nodes[3].id, "out", nodes[5].id, "b");
+      return connect(g, nodes[5].id, "out", nodes[6].id, "source");
+    }));
+});
+
 describe("validateGLSL", () => {
   it("accepts valid GLSL", async () => {
     const source = `#version 100

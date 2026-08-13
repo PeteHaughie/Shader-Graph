@@ -361,6 +361,20 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "color", type: "string", default: "0.1,0.0,0.0" }],
   },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "SpecularLight",
+    inputs: [
+      { name: "normal", type: PortType.Vec4 },
+      { name: "viewDir", type: PortType.Vec4 },
+      { name: "lightDir", type: PortType.Vec4 },
+    ],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "shininess", type: "float", default: 32, min: 1, max: 256 },
+      { name: "color", type: "string", default: "1.0,1.0,1.0" },
+    ],
+  },
 ];
 
 const BY_NAME = new Map<string, PrimitiveDefinition>(PRIMITIVES.map((p) => [p.typeName, p]));
