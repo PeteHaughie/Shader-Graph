@@ -232,28 +232,78 @@
       solids.dodecahedron = buildTriangles(dodVerts, dodFaces);
     })();
 
+    // --- Geodesic sphere via icosahedron subdivision ---
+    function makeGeodesicSphere(level) {
+      const φ = (1 + Math.sqrt(5)) / 2;
+      let verts = [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]];
+      let faces = computeFaces(verts);
+      for (let l = 0; l < level; l++) {
+        const edgeMap = new Map();
+        const newVerts = verts.map(v => [...v]);
+        const newFaces = [];
+        for (const [a, b, c] of faces) {
+          const mid = (i, j) => {
+            const key = i < j ? `${i},${j}` : `${j},${i}`;
+            if (!edgeMap.has(key)) {
+              const p = [(verts[i][0]+verts[j][0])/2, (verts[i][1]+verts[j][1])/2, (verts[i][2]+verts[j][2])/2];
+              const l2 = Math.sqrt(p[0]*p[0]+p[1]*p[1]+p[2]*p[2]);
+              edgeMap.set(key, newVerts.length);
+              newVerts.push([p[0]/l2, p[1]/l2, p[2]/l2]);
+            }
+            return edgeMap.get(key);
+          };
+          const ab = mid(a, b), bc = mid(b, c), ca = mid(c, a);
+          newFaces.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]);
+        }
+        verts = newVerts;
+        faces = newFaces;
+      }
+      return buildTriangles(verts, faces);
+    }
+
     const solidNames = ["tetrahedron", "cube", "octahedron", "dodecahedron", "icosahedron"];
     let currentSolid = 0;
     let geo = solids[solidNames[0]];
+    let geodesicMode = false;
 
     const posBuf = gl.createBuffer();
     const normBuf = gl.createBuffer();
 
-    function uploadGeometry(name) {
-      geo = solids[name];
-
+    function uploadGeo(g) {
+      geo = g;
       gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
       gl.bufferData(gl.ARRAY_BUFFER, geo.positions, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(posAttr);
       gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
-
       gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
       gl.bufferData(gl.ARRAY_BUFFER, geo.normals, gl.STATIC_DRAW);
       gl.enableVertexAttribArray(normAttr);
       gl.vertexAttribPointer(normAttr, 3, gl.FLOAT, false, 0, 0);
     }
 
+    function uploadGeo(g) {
+      geo = g;
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, geo.positions, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(posAttr);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, geo.normals, gl.STATIC_DRAW);
+      gl.enableVertexAttribArray(normAttr);
+      gl.vertexAttribPointer(normAttr, 3, gl.FLOAT, false, 0, 0);
+    }
+
+    function uploadGeometry(name) {
+      uploadGeo(solids[name]);
+    }
+
     uploadGeometry("tetrahedron");
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'g' || e.key === 'G') {
+        geodesicMode = !geodesicMode;
+        currentSolid = -1;
+      }
+    });
 
     gl.enable(gl.DEPTH_TEST);
 
@@ -293,11 +343,16 @@
       const elapsed = (performance.now() - startTime) / 1000;
       const t = elapsed % 60;
 
-      // Cycle through 5 Platonic solids over 60 seconds
-      const solidIdx = Math.min(Math.floor(t / 12), 4);
-      if (solidIdx !== currentSolid) {
-        currentSolid = solidIdx;
-        uploadGeometry(solidNames[solidIdx]);
+      // Cycle through geodesic sphere levels (0-4) or Platonic solids
+      const geoIdx = Math.min(Math.floor(t / 12), 4);
+      if (geoIdx !== currentSolid) {
+        currentSolid = geoIdx;
+        if (geodesicMode) {
+          geo = makeGeodesicSphere(geoIdx);
+          uploadGeo(geo);
+        } else {
+          uploadGeometry(solidNames[geoIdx]);
+        }
       }
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -313,7 +368,8 @@
 
       gl.drawArrays(gl.TRIANGLES, 0, geo.count);
 
-      document.getElementById('solid').textContent = solidNames[solidIdx].charAt(0).toUpperCase() + solidNames[solidIdx].slice(1);
+      const label = geodesicMode ? `Geodesic Lv${geoIdx}` : solidNames[geoIdx].charAt(0).toUpperCase() + solidNames[geoIdx].slice(1);
+      document.getElementById('solid').textContent = label;
       document.getElementById('verts').textContent = geo.count;
       document.getElementById('time').textContent = Math.floor(t);
 

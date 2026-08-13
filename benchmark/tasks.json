@@ -58,5 +58,15 @@
       "minNodes": 2,
       "description": "Tests per-pixel coordinate logic — can the AI compose mod/floor/offset effects from available primitives?"
     }
+  },
+  {
+    "id": "geodesic",
+    "name": "Geodesic Sphere",
+    "brief": "Create a geodesic sphere by subdividing an icosahedron. Generate vertex data for subdivision levels 0 through 4 (level 0 = 20 faces, level 4 = 5120 faces). Each subdivision splits every triangle into 4 by creating midpoints on each edge and projecting them onto the unit sphere. Render the result with vertex shader rotation and fragment shader lighting (red on black), cycling through levels 0-4 over 60 seconds.",
+    "scoring": {
+      "requiredPrimitives": [],
+      "minNodes": 0,
+      "description": "Tests algorithmic geometry generation — can the AI implement icosahedron subdivision with correct vertex projection and face reconstruction?"
+    }
   }
 ]
