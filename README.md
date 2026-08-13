@@ -27,9 +27,18 @@ npm run dev                    # start the MCP server over stdio
 | `connect` / `disconnect` | Wire or remove edges between nodes |
 | `set_parameter` | Tune a node's parameter value |
 | `validate` | Run 4-category validation on the graph |
-| `compile` | Compile graph → GLSL, validate with glslangValidator |
+| `compile` | Compile fragment graph → GLSL, validate with glslangValidator |
+| `vtx_list_primitives` | List vertex primitive types |
+| `vtx_inspect_graph` | View the current vertex graph |
+| `vtx_add_node` / `vtx_remove_node` | Add/remove vertex nodes |
+| `vtx_connect` / `vtx_disconnect` | Wire/remove vertex edges |
+| `vtx_set_parameter` | Tune a vertex node's parameter |
+| `vtx_validate` | Validate the vertex graph |
+| `vtx_compile` | Compile vertex graph → GLSL vertex shader |
 
-## Primitive catalogue (25 nodes)
+## Primitive catalogue (37 nodes)
+
+### Fragment shader (25 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -39,6 +48,15 @@ npm run dev                    # start the MCP server over stdio
 | **Filter** | Blur, Glow, EdgeDetect, Displace |
 | **Utility** | Mask, **SmoothStep** |
 | **Output** | Output |
+
+### Vertex shader (12 nodes)
+
+| Category | Nodes |
+|----------|-------|
+| **Sources** | VertexPosition, VertexNormal, VertexTexCoord, VertexColor |
+| **Transform** | Translate, Rotate, Scale, ModelViewProjection |
+| **Deform** | Wave, NoiseDisplace, Bend |
+| **Output** | VertexOutput |
 
 Each primitive has typed input/output ports and validated parameter ranges. Float and int parameters can also accept wired connections from any node's vec4 output (using the `.r` channel) — so `Time` can drive `Mix.factor`, `Blur.radius`, or `Gradient.angle` for animated effects.
 
@@ -81,12 +99,13 @@ src/
 ├── index.ts           MCP server entry point
 ├── graph/
 │   ├── types.ts       Node, Edge, GraphState interfaces
-│   ├── primitives.ts  PortType enum, port/param specs
-│   ├── registry.ts    20 primitive definitions
+│   ├── primitives.ts  PortType enum, GraphType, port/param specs
+│   ├── registry.ts    37 primitive definitions (25 frag + 12 vert)
 │   ├── operations.ts  Immutable graph mutations
 │   └── validation.ts  4-category graph validation
-└── compiler/
-    └── compile.ts     Graph → GLSL code generator
+├── compiler/
+│   ├── compile.ts     Fragment graph → GLSL code generator
+│   └── vertex.ts      Vertex graph → GLSL code generator
 benchmark/
 ├── tasks.json         5 benchmark task definitions
 ├── score.mjs          GLSL output scoring
@@ -97,15 +116,16 @@ research/
 ├── glsl-validation.md   GLSL validator options
 └── mcp-sdk-patterns.md  MCP SDK v2 reference
 tests/
-├── graph.test.ts       Graph model tests
-└── compiler.test.ts    Compiler + GLSL validation tests
+├── graph.test.ts       Graph model tests (25 tests)
+├── compiler.test.ts    Fragment compiler tests (25 tests)
+└── vertex.test.ts      Vertex compiler tests (13 tests)
 ```
 
 ## Tests
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (50 tests)
+npm test            # vitest run (63 tests)
 ```
 
 ## License
