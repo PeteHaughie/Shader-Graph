@@ -17,6 +17,27 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     ],
   },
   {
+    typeName: "SmoothNoise",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "scale", type: "float", default: 1, min: 0, max: 100 },
+      { name: "seed", type: "float", default: 0, min: 0, max: 100 },
+    ],
+  },
+  {
+    typeName: "FractalNoise",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "scale", type: "float", default: 1, min: 0, max: 100 },
+      { name: "seed", type: "float", default: 0, min: 0, max: 100 },
+      { name: "octaves", type: "int", default: 4, min: 1, max: 8 },
+      { name: "lacunarity", type: "float", default: 2, min: 1, max: 5 },
+      { name: "gain", type: "float", default: 0.5, min: 0, max: 1 },
+    ],
+  },
+  {
     typeName: "SolidColor",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
@@ -104,6 +125,28 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [{ name: "image", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "level", type: "float", default: 0.5, min: 0, max: 1 }],
+  },
+  {
+    typeName: "Time",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "speed", type: "float", default: 1, min: 0, max: 10 }],
+  },
+  {
+    typeName: "SmoothStep",
+    inputs: [
+      { name: "value", type: PortType.Vec4 },
+      { name: "edge0", type: PortType.Vec4 },
+      { name: "edge1", type: PortType.Vec4 },
+    ],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    typeName: "Palette",
+    inputs: [{ name: "value", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "mode", type: "string", default: "fire" }],
   },
   {
     typeName: "Mix",

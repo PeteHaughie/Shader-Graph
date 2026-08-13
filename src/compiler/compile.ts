@@ -63,6 +63,56 @@ float luminance(vec3 c) {
 `;
 }
 
+function generateSmoothNoiseGLSL(): string {
+  return `
+float hash21_s(vec2 p) {
+  return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453123);
+}
+
+float smoothNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = hash21_s(i);
+  float b = hash21_s(i + vec2(1.0, 0.0));
+  float c = hash21_s(i + vec2(0.0, 1.0));
+  float d = hash21_s(i + vec2(1.0, 1.0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+float fbm(vec2 p, float lacunarity, float gain) {
+  float value = 0.0;
+  float amplitude = 0.5;
+  for (int i = 0; i < 8; i++) {
+    value += amplitude * smoothNoise(p);
+    p *= lacunarity;
+    amplitude *= gain;
+  }
+  return value;
+}
+`;
+}
+
+function generatePaletteGLSL(): string {
+  return `
+vec3 palette(float t, int mode) {
+  vec3 a, b, c, d;
+  if (mode == 0) {
+    a = vec3(0.0, 0.0, 0.0); b = vec3(0.4, 0.0, 0.0); c = vec3(1.0, 0.3, 0.0); d = vec3(1.0, 0.7, 0.1);
+  } else if (mode == 1) {
+    a = vec3(0.5, 0.6, 0.8); b = vec3(0.3, 0.4, 0.6); c = vec3(0.8, 0.7, 0.9); d = vec3(0.2, 0.1, 0.3);
+  } else if (mode == 2) {
+    a = vec3(0.5, 0.5, 0.5); b = vec3(0.5, 0.5, 0.5); c = vec3(1.0, 1.0, 1.0); d = vec3(0.0, 0.33, 0.67);
+  } else if (mode == 3) {
+    a = vec3(0.1, 0.05, 0.0); b = vec3(0.5, 0.3, 0.1); c = vec3(0.8, 0.6, 0.2); d = vec3(0.9, 0.7, 0.3);
+  } else {
+    a = vec3(0.1, 0.0, 0.1); b = vec3(0.5, 0.2, 0.5); c = vec3(0.8, 0.3, 0.8); d = vec3(0.3, 0.5, 0.7);
+  }
+  return a + b * cos(6.28318 * (c * t + d));
+}
+`;
+}
+
 function generateEdgeDetectGLSL(): string {
   return `
 vec4 sobel(sampler2D tex, vec2 uv, vec2 step) {
@@ -121,6 +171,40 @@ export function compileGraph(state: GraphState): CompiledShader {
         const scale = (node.params.scale as number) ?? 1;
         const seed = (node.params.seed as number) ?? 0;
         nodeCode.push(`  vec4 ${varName} = noise1d(${toGLSLFloat(scale)}, ${toGLSLFloat(seed)});`);
+        break;
+      }
+      case "SmoothNoise": {
+        const scale = (node.params.scale as number) ?? 1;
+        const seed = (node.params.seed as number) ?? 0;
+        nodeCode.push(`  vec4 ${varName} = vec4(smoothNoise(gl_FragCoord.xy * ${toGLSLFloat(scale)} + ${toGLSLFloat(seed)}));`);
+        break;
+      }
+      case "FractalNoise": {
+        const scale = (node.params.scale as number) ?? 1;
+        const seed = (node.params.seed as number) ?? 0;
+        const lacunarity = (node.params.lacunarity as number) ?? 2;
+        const gain = (node.params.gain as number) ?? 0.5;
+        nodeCode.push(`  vec4 ${varName} = vec4(fbm(gl_FragCoord.xy * ${toGLSLFloat(scale)} + ${toGLSLFloat(seed)}, ${toGLSLFloat(lacunarity)}, ${toGLSLFloat(gain)}));`);
+        break;
+      }
+      case "Time": {
+        const speed = (node.params.speed as number) ?? 1;
+        nodeCode.push(`  vec4 ${varName} = vec4(iTime * ${toGLSLFloat(speed)});`);
+        break;
+      }
+      case "SmoothStep": {
+        const value = inputVarMap.get("value") ?? "vec4(0.0)";
+        const edge0 = inputVarMap.get("edge0") ?? "vec4(0.0)";
+        const edge1 = inputVarMap.get("edge1") ?? "vec4(1.0)";
+        nodeCode.push(`  vec4 ${varName} = smoothstep(${edge0}, ${edge1}, ${value});`);
+        break;
+      }
+      case "Palette": {
+        const input = inputVarMap.get("value") ?? "vec4(0.0)";
+        const mode = (node.params.mode as string) ?? "fire";
+        const modeIndex = ["fire", "ice", "rainbow", "gold", "neon"].indexOf(mode);
+        nodeCode.push(`  float pal_lum = luminance(${input}.rgb);`);
+        nodeCode.push(`  vec4 ${varName} = vec4(palette(pal_lum, ${modeIndex}), 1.0);`);
         break;
       }
       case "SolidColor": {
@@ -270,25 +354,35 @@ export function compileGraph(state: GraphState): CompiledShader {
 
   const typeNames = [...state.nodes.values()].map((n) => n.typeName);
   const needsNoise = typeNames.includes("Noise");
-  const needsColorUtil = ["HueShift", "Saturation", "Threshold", "EdgeDetect"].some((t) => typeNames.includes(t));
+  const needsColorUtil = ["HueShift", "Saturation", "Threshold", "EdgeDetect", "Palette"].some((t) => typeNames.includes(t));
+  const needsSmoothNoise = typeNames.includes("SmoothNoise") || typeNames.includes("FractalNoise");
   const needsEdgeDetect = typeNames.includes("EdgeDetect");
+  const needsTime = typeNames.includes("Time");
   const needsTexture = typeNames.includes("Texture") && [...state.nodes.values()].some((n) => n.typeName === "Texture" && !!(n.params.url as string));
-  const needsDisplace = typeNames.includes("Displace") && !typeNames.includes("Texture");
   const needsEdgeTexture = typeNames.includes("EdgeDetect") || typeNames.includes("Blur");
 
   const parts: string[] = [GLSL_HEADER];
   if (needsTexture || needsEdgeTexture) {
     parts.push(`uniform sampler2D uTexture;\n`);
   }
+  if (needsTime) {
+    parts.push(`uniform float iTime;\n`);
+  }
   parts.push(GLSL_UNIFORMS);
   if (needsNoise) {
     parts.push(generateNoiseGLSL());
+  }
+  if (needsSmoothNoise) {
+    parts.push(generateSmoothNoiseGLSL());
   }
   if (needsColorUtil) {
     parts.push(generateColorUtilityGLSL());
   }
   if (needsEdgeDetect) {
     parts.push(generateEdgeDetectGLSL());
+  }
+  if (typeNames.includes("Palette")) {
+    parts.push(generatePaletteGLSL());
   }
   parts.push("void main() {\n");
   parts.push(nodeCode.join("\n"));

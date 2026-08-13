@@ -229,6 +229,87 @@ describe("all primitives compile to valid GLSL", () => {
     }));
 });
 
+describe("new primitives", () => {
+  it("Time", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Time", { speed: 0.5 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+    }));
+
+  it("SmoothNoise", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SmoothNoise", { scale: 3, seed: 1 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+    }));
+
+  it("FractalNoise", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "FractalNoise", { scale: 2, seed: 0, octaves: 4, lacunarity: 2, gain: 0.5 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+    }));
+
+  it("SmoothStep", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Noise", { scale: 3, seed: 0 });
+      g = addNode(g, "SolidColor", { r: 0.3, g: 0.3, b: 0.3, a: 1 });
+      g = addNode(g, "SolidColor", { r: 0.7, g: 0.7, b: 0.7, a: 1 });
+      g = addNode(g, "SmoothStep", {});
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[3].id, "value");
+      g = connect(g, nodes[1].id, "out", nodes[3].id, "edge0");
+      g = connect(g, nodes[2].id, "out", nodes[3].id, "edge1");
+      return connect(g, nodes[3].id, "out", nodes[4].id, "source");
+    }));
+
+  it("Palette (fire)", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Noise", { scale: 3, seed: 0 });
+      g = addNode(g, "Palette", { mode: "fire" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "value");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+    }));
+
+  it("Palette (ice)", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Noise", { scale: 3, seed: 0 });
+      g = addNode(g, "Palette", { mode: "ice" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "value");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+    }));
+
+  it("Palette (rainbow)", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "Noise", { scale: 3, seed: 0 });
+      g = addNode(g, "Palette", { mode: "rainbow" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "value");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+    }));
+
+  it("Time + FractalNoise + Palette full pipeline", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "FractalNoise", { scale: 3, seed: 0, octaves: 3, lacunarity: 2, gain: 0.5 });
+      g = addNode(g, "Time", { speed: 0.1 });
+      g = addNode(g, "Palette", { mode: "fire" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "value");
+      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+    }));
+});
+
 describe("compileGraph", () => {
   it("rejects invalid graph", () => {
     const g = createGraph();
