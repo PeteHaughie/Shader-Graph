@@ -149,11 +149,18 @@ export interface ShaderMetadata {
   output: string;
 }
 
-export function describeFragmentGraph(state: GraphState, externalVaryings?: VaryingInfo[]): ShaderMetadata {
+export interface ShaderPass {
+  type: string;
+  description: string;
+}
+
+export function describeFragmentGraph(state: GraphState, externalVaryings?: VaryingInfo[]): ShaderMetadata & { passes?: ShaderPass[] } {
   const typeNames = [...state.nodes.values()].map((n) => n.typeName);
   const uniforms = [{ name: "iResolution", type: "vec2", semantic: "resolution" }];
   if (typeNames.includes("Time")) uniforms.push({ name: "iTime", type: "float", semantic: "time" });
-  const texCount = [...state.nodes.values()].filter((n) => n.typeName === "Texture" && !!(n.params.url as string)).length;
+  const texCount = [...state.nodes.values()].filter((n) =>
+    (n.typeName === "Texture" || n.typeName === "NormalMap") && !!(n.params.url as string)
+  ).length;
   const blurTexCount = [...state.nodes.values()].filter((n) =>
     (n.typeName === "Blur" || n.typeName === "EdgeDetect") &&
     [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
@@ -162,7 +169,15 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
   for (let i = 0; i < texCount + blurTexCount; i++) {
     uniforms.push({ name: `uTexture${i}`, type: "sampler2D", semantic: "texture" });
   }
-  return { uniforms, varyings: externalVaryings ?? [], output: "gl_FragColor" };
+  const passes: ShaderPass[] = [];
+  if (typeNames.includes("ShadowMap")) {
+    uniforms.push({ name: "uShadowMap", type: "sampler2D", semantic: "shadowMap" });
+    uniforms.push({ name: "uLightMVP", type: "mat4", semantic: "lightModelViewProjection" });
+    passes.push({ type: "depth", description: "Render scene from light POV to depth texture, bind to uShadowMap" });
+  }
+  const result: any = { uniforms, varyings: externalVaryings ?? [], output: "gl_FragColor" };
+  if (passes.length > 0) result.passes = passes;
+  return result;
 }
 
 export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader {
@@ -405,6 +420,26 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}), 1.0);`);
         break;
       }
+      case "NormalMap": {
+        const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
+        const position = inputVarMap.get("position") ?? "vec4(0.0)";
+        const url = (node.params.url as string) ?? "";
+        const intensity = (node.params.intensity as number) ?? 1;
+        const ti = textureIndexMap.size;
+        if (url) textureIndexMap.set(node.id, texCounter++);
+        const texName = url ? `uTexture${textureIndexMap.get(node.id) ?? ti}` : null;
+        if (texName) {
+          nodeCode.push(`  vec3 nm_sampled = texture2D(${texName}, gl_FragCoord.xy / iResolution).xyz * 2.0 - 1.0;`);
+        } else {
+          nodeCode.push(`  vec3 nm_sampled = vec3(0.0, 0.0, 1.0);`);
+        }
+        nodeCode.push(`  nm_sampled *= ${toGLSLFloat(intensity)};`);
+        nodeCode.push(`  vec3 nm_tangent = normalize(dFdx(${position}.xyz));`);
+        nodeCode.push(`  vec3 nm_bitangent = normalize(cross(${normal}.xyz, nm_tangent));`);
+        nodeCode.push(`  mat3 nm_tbn = mat3(nm_tangent, nm_bitangent, ${normal}.xyz);`);
+        nodeCode.push(`  vec4 ${varName} = vec4(normalize(nm_tbn * nm_sampled), 0.0);`);
+        break;
+      }
       case "SpecularLight": {
         const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
         const viewDir = inputVarMap.get("viewDir") ?? "vec4(0.0, 0.0, 1.0, 0.0)";
@@ -417,6 +452,18 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         nodeCode.push(`  vec3 sl_h = normalize(sl_l + sl_v);`);
         nodeCode.push(`  float sl_spec = pow(max(dot(sl_n, sl_h), 0.0), ${toGLSLFloat(shininess)});`);
         nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}) * sl_spec, 1.0);`);
+        break;
+      }
+      case "ShadowMap": {
+        const position = inputVarMap.get("position") ?? "vec4(0.0)";
+        const bias = (node.params.bias as number) ?? 0.005;
+        nodeCode.push(`  vec4 sm_light_pos = uLightMVP * ${position};`);
+        nodeCode.push(`  vec3 sm_proj = sm_light_pos.xyz / sm_light_pos.w;`);
+        nodeCode.push(`  sm_proj = sm_proj * 0.5 + 0.5;`);
+        nodeCode.push(`  float sm_closest = texture2D(uShadowMap, sm_proj.xy).r;`);
+        nodeCode.push(`  float sm_current = sm_proj.z - ${toGLSLFloat(bias)};`);
+        nodeCode.push(`  float sm_shadow = sm_current > sm_closest ? 0.0 : 1.0;`);
+        nodeCode.push(`  vec4 ${varName} = vec4(vec3(sm_shadow), 1.0);`);
         break;
       }
       case "Output": {
@@ -433,7 +480,9 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   const needsSmoothNoise = typeNames.includes("SmoothNoise") || typeNames.includes("FractalNoise");
   const needsEdgeDetect = typeNames.includes("EdgeDetect");
   const needsTime = typeNames.includes("Time");
-  const texCount = [...state.nodes.values()].filter((n) => n.typeName === "Texture" && !!(n.params.url as string)).length;
+  const texCount = [...state.nodes.values()].filter((n) =>
+    (n.typeName === "Texture" || n.typeName === "NormalMap") && !!(n.params.url as string)
+  ).length;
   const blurTexCount = [...state.nodes.values()].filter((n) =>
     (n.typeName === "Blur" || n.typeName === "EdgeDetect") &&
     [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
@@ -441,8 +490,15 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   ).length;
 
   const parts: string[] = [GLSL_HEADER];
+  if (typeNames.includes("NormalMap")) {
+    parts.push(`#extension GL_OES_standard_derivatives : enable\n`);
+  }
   for (let i = 0; i < texCount + blurTexCount; i++) {
     parts.push(`uniform sampler2D uTexture${i};\n`);
+  }
+  if (typeNames.includes("ShadowMap")) {
+    parts.push(`uniform sampler2D uShadowMap;\n`);
+    parts.push(`uniform mat4 uLightMVP;\n`);
   }
   if (needsTime) {
     parts.push(`uniform float iTime;\n`);

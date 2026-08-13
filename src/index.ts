@@ -212,6 +212,23 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  "compile_depth_pass",
+  {
+    description: "Compile a depth-only vertex shader for shadow map rendering",
+  },
+  async () => {
+    const vtxResult = compileVertexGraph(vtxGraph);
+    if (!vtxResult.valid) return { content: [{ type: "text", text: `Vertex graph: ${vtxResult.errors}` }], isError: true };
+    const vertSrc = `#version 100\nprecision highp float;\nattribute vec3 aPosition;\nuniform mat4 uLightMVP;\nvoid main() {\n  gl_Position = uLightMVP * vec4(aPosition, 1.0);\n}`;
+    const fragSrc = `#version 100\nprecision highp float;\nvoid main() {\n  gl_FragColor = vec4(1.0);\n}`;
+    const vtxVal = await validateGLSLVert(vertSrc);
+    const fragVal = await validateGLSL(fragSrc);
+    const response = `=== Depth Vertex ===\n// Valid: ${vtxVal.valid}\n${vertSrc}\n\n=== Depth Fragment ===\n// Valid: ${fragVal.valid}\n${fragSrc}`;
+    return { content: [{ type: "text", text: response }] };
+  },
+);
+
 // --- Vertex graph tools ---
 
 server.registerTool(

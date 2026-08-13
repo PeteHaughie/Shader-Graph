@@ -444,6 +444,33 @@ describe("new features", () => {
     }));
 });
 
+describe("normal map and shadow map", () => {
+  it("NormalMap (procedural, no URL)", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 0, g: 1, b: 0, a: 0 });
+      g = addNode(g, "SolidColor", { r: 1, g: 0, b: 0, a: 0 });
+      g = addNode(g, "NormalMap", { url: "", intensity: 1 });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "normal");
+      g = connect(g, nodes[1].id, "out", nodes[2].id, "position");
+      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+    }));
+
+  it("ShadowMap", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "SolidColor", { r: 1, g: 0, b: 0, a: 0 });
+      g = addNode(g, "ShadowMap", { bias: 0.005 });
+      g = addNode(g, "Multiply", {});
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "position");
+      g = connect(g, nodes[0].id, "out", nodes[2].id, "a");
+      g = connect(g, nodes[1].id, "out", nodes[2].id, "b");
+      return connect(g, nodes[2].id, "out", nodes[3].id, "source");
+    }));
+});
+
 describe("validateGLSL", () => {
   it("accepts valid GLSL", async () => {
     const source = `#version 100

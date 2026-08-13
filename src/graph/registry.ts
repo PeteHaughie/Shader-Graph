@@ -219,6 +219,15 @@ const PRIMITIVES: PrimitiveDefinition[] = [
   },
   {
     graphType: GraphType.Fragment,
+    typeName: "ShadowMap",
+    inputs: [{ name: "position", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "bias", type: "float", default: 0.005, min: 0, max: 0.1 },
+    ],
+  },
+  {
+    graphType: GraphType.Fragment,
     typeName: "Output",
     inputs: [{ name: "source", type: PortType.Vec4 }],
     outputs: [],
@@ -360,6 +369,19 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "color", type: "string", default: "0.1,0.0,0.0" }],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "NormalMap",
+    inputs: [
+      { name: "normal", type: PortType.Vec4 },
+      { name: "position", type: PortType.Vec4 },
+    ],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [
+      { name: "url", type: "string", default: "" },
+      { name: "intensity", type: "float", default: 1, min: 0, max: 5 },
+    ],
   },
   {
     graphType: GraphType.Fragment,
