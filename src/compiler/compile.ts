@@ -236,19 +236,21 @@ export function compileGraph(state: GraphState): CompiledShader {
         break;
       }
       case "Blur": {
-        nodeCode.push(`  vec2 blur_step = vec2(${wiredParam(inputVarMap, node.params, "radius", 2)}) / iResolution;`);
-        nodeCode.push(`  vec2 blur_uv = gl_FragCoord.xy / iResolution;`);
-        nodeCode.push(`  vec4 ${varName} = vec4(0.0);`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(-blur_step.x, -blur_step.y));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(0.0, -blur_step.y));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(blur_step.x, -blur_step.y));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(-blur_step.x, 0.0));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(0.0, 0.0));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(blur_step.x, 0.0));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(-blur_step.x, blur_step.y));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(0.0, blur_step.y));`);
-        nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(blur_step.x, blur_step.y));`);
-        nodeCode.push(`  ${varName} /= 9.0;`);
+        const blurInput = inputVarMap.get("image") ?? "vec4(0.0)";
+        const blurSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode) : null;
+        if (blurSrcNode?.typeName === "Texture") {
+          nodeCode.push(`  vec2 blur_step = vec2(${wiredParam(inputVarMap, node.params, "radius", 2)}) / iResolution;`);
+          nodeCode.push(`  vec2 blur_uv = gl_FragCoord.xy / iResolution;`);
+          nodeCode.push(`  vec4 ${varName} = vec4(0.0);`);
+          for (const dy of [-1, 0, 1]) {
+            for (const dx of [-1, 0, 1]) {
+              nodeCode.push(`  ${varName} += texture2D(uTexture, blur_uv + vec2(${dx}.0, ${dy}.0) * blur_step);`);
+            }
+          }
+          nodeCode.push(`  ${varName} /= 9.0;`);
+        } else {
+          nodeCode.push(`  vec4 ${varName} = ${blurInput};`);
+        }
         break;
       }
       case "Glow": {
@@ -258,10 +260,15 @@ export function compileGraph(state: GraphState): CompiledShader {
         break;
       }
       case "EdgeDetect": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  vec2 step = vec2(1.0) / iResolution;`);
-        nodeCode.push(`  vec2 uv = gl_FragCoord.xy / iResolution;`);
-        nodeCode.push(`  vec4 ${varName} = sobel(uTexture, uv, step);`);
+        const edgeInput = inputVarMap.get("image") ?? "vec4(0.0)";
+        const edgeSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode) : null;
+        if (edgeSrcNode?.typeName === "Texture") {
+          nodeCode.push(`  vec2 step = vec2(1.0) / iResolution;`);
+          nodeCode.push(`  vec2 uv = gl_FragCoord.xy / iResolution;`);
+          nodeCode.push(`  vec4 ${varName} = sobel(uTexture, uv, step);`);
+        } else {
+          nodeCode.push(`  vec4 ${varName} = ${edgeInput};`);
+        }
         break;
       }
       case "Displace": {
@@ -352,11 +359,16 @@ export function compileGraph(state: GraphState): CompiledShader {
   const needsSmoothNoise = typeNames.includes("SmoothNoise") || typeNames.includes("FractalNoise");
   const needsEdgeDetect = typeNames.includes("EdgeDetect");
   const needsTime = typeNames.includes("Time");
-  const needsTexture = typeNames.includes("Texture") && [...state.nodes.values()].some((n) => n.typeName === "Texture" && !!(n.params.url as string));
-  const needsEdgeTexture = typeNames.includes("EdgeDetect") || typeNames.includes("Blur");
+  const needsTexture = [...state.nodes.values()].some((n) =>
+    n.typeName === "Texture" && !!(n.params.url as string)
+  ) || [...state.nodes.values()].some((n) =>
+    (n.typeName === "Blur" || n.typeName === "EdgeDetect") &&
+    [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
+      state.nodes.get(e.fromNode)?.typeName === "Texture")
+  );
 
   const parts: string[] = [GLSL_HEADER];
-  if (needsTexture || needsEdgeTexture) {
+  if (needsTexture) {
     parts.push(`uniform sampler2D uTexture;\n`);
   }
   if (needsTime) {
