@@ -35,6 +35,7 @@ npm run dev                    # start the MCP server over stdio
 | `vtx_set_parameter` | Tune a vertex node's parameter |
 | `vtx_validate` | Validate the vertex graph |
 | `vtx_compile` | Compile vertex graph → GLSL vertex shader |
+| `compile_pair` | Compile vertex + fragment graphs as a matched pair with varying passthrough |
 
 ## Primitive catalogue (37 nodes)
 
@@ -42,9 +43,10 @@ npm run dev                    # start the MCP server over stdio
 
 | Category | Nodes |
 |----------|-------|
-| **Sources** | Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time** |
+| **Sources** | Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time**, **FromVertex** |
 | **Color** | BrightnessContrast, HueShift, Saturation, Invert, Threshold, **Palette** |
 | **Blend** | Mix, Add, Subtract, Multiply |
+| **Lighting** | **DiffuseLight**, **AmbientLight** |
 | **Filter** | Blur, Glow, EdgeDetect, Displace |
 | **Utility** | Mask, **SmoothStep** |
 | **Output** | Output |
@@ -57,6 +59,7 @@ npm run dev                    # start the MCP server over stdio
 | **Transform** | Translate, Rotate, Scale, ModelViewProjection |
 | **Deform** | Wave, NoiseDisplace, Bend |
 | **Output** | VertexOutput |
+| **Bridge** | **PassToFragment** |
 
 Each primitive has typed input/output ports and validated parameter ranges. Float and int parameters can also accept wired connections from any node's vec4 output (using the `.r` channel) — so `Time` can drive `Mix.factor`, `Blur.radius`, or `Gradient.angle` for animated effects.
 
@@ -121,11 +124,15 @@ tests/
 └── vertex.test.ts      Vertex compiler tests (13 tests)
 ```
 
+## 3D Demo
+
+Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons with vertex shader rotation and fragment shader lighting — red on black, perfectly looping over 60 seconds. Uses the same vertex+fragment shader pair pattern that `compile_pair` generates.
+
 ## Tests
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (63 tests)
+npm test            # vitest run (67 tests)
 ```
 
 ## License
