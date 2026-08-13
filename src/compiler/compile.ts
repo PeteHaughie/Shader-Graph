@@ -6,6 +6,8 @@ import { GraphState } from "../graph/types.js";
 import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
 import { topologicalSort } from "../graph/operations.js";
+import { getTarget, isValidTarget } from "./targets.js";
+import type { Target, TargetDef } from "./targets.js";
 
 interface CompiledShader {
   source: string;
@@ -14,13 +16,13 @@ interface CompiledShader {
   metadata?: ShaderMetadata;
 }
 
-const GLSL_HEADER = `#version 100
-precision highp float;
-`;
-
 const GLSL_UNIFORMS = `
 uniform vec2 iResolution;
 `;
+
+function glslHeader(target: TargetDef): string {
+  return `${target.version}\n${target.precision}`;
+}
 
 function toGLSLFloat(n: number): string {
   const s = n.toString();
@@ -120,17 +122,17 @@ vec3 palette(float t, int mode) {
 `;
 }
 
-function generateEdgeDetectGLSL(): string {
+function generateEdgeDetectGLSL(tf: string): string {
   return `
 vec4 sobel(sampler2D tex, vec2 uv, vec2 step) {
-  float tl = luminance(texture2D(tex, uv + vec2(-step.x, step.y)).rgb);
-  float t  = luminance(texture2D(tex, uv + vec2(0.0, step.y)).rgb);
-  float tr = luminance(texture2D(tex, uv + vec2(step.x, step.y)).rgb);
-  float l  = luminance(texture2D(tex, uv + vec2(-step.x, 0.0)).rgb);
-  float r  = luminance(texture2D(tex, uv + vec2(step.x, 0.0)).rgb);
-  float bl = luminance(texture2D(tex, uv + vec2(-step.x, -step.y)).rgb);
-  float b  = luminance(texture2D(tex, uv + vec2(0.0, -step.y)).rgb);
-  float br = luminance(texture2D(tex, uv + vec2(step.x, -step.y)).rgb);
+  float tl = luminance(${tf}(tex, uv + vec2(-step.x, step.y)).rgb);
+  float t  = luminance(${tf}(tex, uv + vec2(0.0, step.y)).rgb);
+  float tr = luminance(${tf}(tex, uv + vec2(step.x, step.y)).rgb);
+  float l  = luminance(${tf}(tex, uv + vec2(-step.x, 0.0)).rgb);
+  float r  = luminance(${tf}(tex, uv + vec2(step.x, 0.0)).rgb);
+  float bl = luminance(${tf}(tex, uv + vec2(-step.x, -step.y)).rgb);
+  float b  = luminance(${tf}(tex, uv + vec2(0.0, -step.y)).rgb);
+  float br = luminance(${tf}(tex, uv + vec2(step.x, -step.y)).rgb);
   float gx = -tl - 2.0*l - bl + tr + 2.0*r + br;
   float gy = -tl - 2.0*t - tr + bl + 2.0*b + br;
   return vec4(vec3(sqrt(gx*gx + gy*gy)), 1.0);
@@ -175,12 +177,13 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
     uniforms.push({ name: "uLightMVP", type: "mat4", semantic: "lightModelViewProjection" });
     passes.push({ type: "depth", description: "Render scene from light POV to depth texture, bind to uShadowMap" });
   }
-  const result: any = { uniforms, varyings: externalVaryings ?? [], output: "gl_FragColor" };
+  const result: any = { uniforms, varyings: externalVaryings ?? [], output: "fragment" };
   if (passes.length > 0) result.passes = passes;
   return result;
 }
 
-export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader {
+export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[], targetName: string = "es100"): CompiledShader {
+  const target = getTarget(isValidTarget(targetName) ? targetName : "es100");
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {
@@ -219,7 +222,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         const url = node.params.url as string;
         if (url) {
           const ti = textureIndexMap.get(node.id) ?? 0;
-          nodeCode.push(`  vec4 ${varName} = texture2D(uTexture${ti}, gl_FragCoord.xy / iResolution);`);
+          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, gl_FragCoord.xy / iResolution);`);
         } else {
           nodeCode.push(`  vec4 ${varName} = vec4(gl_FragCoord.xy / iResolution, 0.0, 1.0);`);
         }
@@ -297,7 +300,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
           nodeCode.push(`  vec4 ${varName} = vec4(0.0);`);
           for (const dy of [-1, 0, 1]) {
             for (const dx of [-1, 0, 1]) {
-              nodeCode.push(`  ${varName} += texture2D(uTexture${ti}, blur_uv + vec2(${dx}.0, ${dy}.0) * blur_step);`);
+              nodeCode.push(`  ${varName} += ${target.textureFunc}(uTexture${ti}, blur_uv + vec2(${dx}.0, ${dy}.0) * blur_step);`);
             }
           }
           nodeCode.push(`  ${varName} /= 9.0;`);
@@ -429,7 +432,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         if (url) textureIndexMap.set(node.id, texCounter++);
         const texName = url ? `uTexture${textureIndexMap.get(node.id) ?? ti}` : null;
         if (texName) {
-          nodeCode.push(`  vec3 nm_sampled = texture2D(${texName}, gl_FragCoord.xy / iResolution).xyz * 2.0 - 1.0;`);
+          nodeCode.push(`  vec3 nm_sampled = ${target.textureFunc}(${texName}, gl_FragCoord.xy / iResolution).xyz * 2.0 - 1.0;`);
         } else {
           nodeCode.push(`  vec3 nm_sampled = vec3(0.0, 0.0, 1.0);`);
         }
@@ -460,7 +463,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         nodeCode.push(`  vec4 sm_light_pos = uLightMVP * ${position};`);
         nodeCode.push(`  vec3 sm_proj = sm_light_pos.xyz / sm_light_pos.w;`);
         nodeCode.push(`  sm_proj = sm_proj * 0.5 + 0.5;`);
-        nodeCode.push(`  float sm_closest = texture2D(uShadowMap, sm_proj.xy).r;`);
+        nodeCode.push(`  float sm_closest = ${target.textureFunc}(uShadowMap, sm_proj.xy).r;`);
         nodeCode.push(`  float sm_current = sm_proj.z - ${toGLSLFloat(bias)};`);
         nodeCode.push(`  float sm_shadow = sm_current > sm_closest ? 0.0 : 1.0;`);
         nodeCode.push(`  vec4 ${varName} = vec4(vec3(sm_shadow), 1.0);`);
@@ -468,7 +471,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
       }
       case "Output": {
         const input = inputVarMap.get("source") ?? "vec4(0.0)";
-        nodeCode.push(`  gl_FragColor = ${input};`);
+        nodeCode.push(`  ${target.fragOutputName} = ${input};`);
         break;
       }
     }
@@ -489,9 +492,10 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
       state.nodes.get(e.fromNode)?.typeName === "Texture")
   ).length;
 
-  const parts: string[] = [GLSL_HEADER];
-  if (typeNames.includes("NormalMap")) {
-    parts.push(`#extension GL_OES_standard_derivatives : enable\n`);
+  const parts: string[] = [glslHeader(target)];
+  if (target.fragOutputDecl) parts.push(target.fragOutputDecl);
+  if (typeNames.includes("NormalMap") && target.derivativesExt) {
+    parts.push(target.derivativesExt);
   }
   for (let i = 0; i < texCount + blurTexCount; i++) {
     parts.push(`uniform sampler2D uTexture${i};\n`);
@@ -506,7 +510,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   parts.push(GLSL_UNIFORMS);
   const varyings = externalVaryings ?? [];
   for (const v of varyings) {
-    parts.push(`varying ${v.type} ${v.name};\n`);
+    parts.push(`${target.varyingIn} ${v.type} ${v.name};\n`);
   }
   if (needsNoise) {
     parts.push(generateNoiseGLSL());
@@ -518,7 +522,7 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
     parts.push(generateColorUtilityGLSL());
   }
   if (needsEdgeDetect) {
-    parts.push(generateEdgeDetectGLSL());
+    parts.push(generateEdgeDetectGLSL(target.textureFunc));
   }
   if (typeNames.includes("Palette")) {
     parts.push(generatePaletteGLSL());

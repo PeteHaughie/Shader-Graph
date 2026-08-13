@@ -6,6 +6,8 @@ import { GraphState } from "../graph/types.js";
 import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
 import { topologicalSort } from "../graph/operations.js";
+import { getTarget, isValidTarget } from "./targets.js";
+import type { TargetDef } from "./targets.js";
 
 interface CompiledShader {
   source: string;
@@ -14,15 +16,15 @@ interface CompiledShader {
   metadata?: ShaderMetadata;
 }
 
-const GLSL_HEADER = `#version 100
-precision highp float;
-`;
+function glslHeader(target: TargetDef): string {
+  return `${target.version}\n${target.precision}`;
+}
 
-const GLSL_ATTRIBUTES = `
-attribute vec3 aPosition;
-attribute vec3 aNormal;
-attribute vec2 aTexCoord;
-attribute vec4 aColor;
+const GLSL_ATTRIBUTES = (target: TargetDef) => `
+${target.attribKeyword} vec3 aPosition;
+${target.attribKeyword} vec3 aNormal;
+${target.attribKeyword} vec2 aTexCoord;
+${target.attribKeyword} vec4 aColor;
 `;
 
 const GLSL_UNIFORMS = `
@@ -89,7 +91,8 @@ export function describeVertexGraph(state: GraphState): ShaderMetadata {
   };
 }
 
-export function compileVertexGraph(state: GraphState, externalVaryings?: VaryingInfo[]): CompiledShader & { varyings?: VaryingInfo[] } {
+export function compileVertexGraph(state: GraphState, externalVaryings?: VaryingInfo[], targetName: string = "es100"): CompiledShader & { varyings?: VaryingInfo[] } {
+  const target = getTarget(isValidTarget(targetName) ? targetName : "es100");
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {
@@ -229,11 +232,11 @@ export function compileVertexGraph(state: GraphState, externalVaryings?: Varying
   const typeNames = [...state.nodes.values()].map((n) => n.typeName);
   const needsNoise = typeNames.includes("NoiseDisplace");
 
-  const parts: string[] = [GLSL_HEADER];
-  parts.push(GLSL_ATTRIBUTES);
+  const parts: string[] = [glslHeader(target)];
+  parts.push(GLSL_ATTRIBUTES(target));
   parts.push(GLSL_UNIFORMS);
   for (const v of varyings) {
-    parts.push(`varying ${v.type} ${v.name};\n`);
+    parts.push(`${target.varyingOut} ${v.type} ${v.name};\n`);
   }
   if (needsNoise) {
     parts.push(generateNoiseGLSL());

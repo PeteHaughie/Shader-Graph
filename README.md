@@ -26,8 +26,10 @@ npm run dev                    # start the MCP server over stdio
 | `remove_node` | Remove a node and its connections |
 | `connect` / `disconnect` | Wire or remove edges between nodes |
 | `set_parameter` | Tune a node's parameter value |
+| `set_target` | Set GLSL target version: es100, es300, or gl150 |
 | `validate` | Run 4-category validation on the graph |
-| `compile` | Compile fragment graph → GLSL, validate with glslangValidator |
+| `compile` | Compile fragment graph → GLSL for current target |
+| `describe` | Fragment graph metadata (uniforms, varyings, output) |
 | `vtx_list_primitives` | List vertex primitive types |
 | `vtx_inspect_graph` | View the current vertex graph |
 | `vtx_add_node` / `vtx_remove_node` | Add/remove vertex nodes |
@@ -35,7 +37,10 @@ npm run dev                    # start the MCP server over stdio
 | `vtx_set_parameter` | Tune a vertex node's parameter |
 | `vtx_validate` | Validate the vertex graph |
 | `vtx_compile` | Compile vertex graph → GLSL vertex shader |
-| `compile_pair` | Compile vertex + fragment graphs as a matched pair with varying passthrough |
+| `vtx_describe` | Vertex graph metadata (attributes, uniforms, varyings) |
+| `compile_pair` | Compile vertex + fragment as a matched pair with varying passthrough |
+| `describe_pair` | Combined metadata for both graphs |
+| `compile_depth_pass` | Depth-only shaders for shadow map rendering |
 
 ## Primitive catalogue (37 nodes)
 
@@ -133,6 +138,18 @@ Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons wi
 ```sh
 npm run typecheck   # tsc --noEmit
 npm test            # vitest run (71 tests)
+
+## GLSL targets
+
+Use `set_target` to switch between GLSL dialects:
+
+| Target | Version | Use case |
+|--------|---------|----------|
+| `es100` | GLSL ES 1.00 | WebGL 1, GLES 2.0 (default) |
+| `es300` | GLSL ES 3.00 | WebGL 2, Raspberry Pi 3+ |
+| `gl150` | GLSL 1.50 | OpenGL 3.2, macOS, openFrameworks |
+
+The graph structure, validation, and primitives are target-agnostic — only the GLSL text generation changes (`attribute` → `in`, `texture2D` → `texture`, `gl_FragColor` → `out vec4 fragColor`, etc.).
 ```
 
 ## Future directions
