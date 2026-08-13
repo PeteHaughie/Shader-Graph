@@ -165,7 +165,7 @@
       ),
       icosahedron: buildTriangles(
         [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]],
-        [[0,2,4],[0,4,6],[0,6,10],[0,10,8],[0,8,2],[1,3,5],[1,5,7],[1,7,11],[1,11,9],[1,9,3],[2,8,3],[2,3,9],[4,2,9],[4,9,5],[6,4,5],[6,5,7],[10,6,7],[10,7,11],[8,10,11],[8,11,3]]
+        [[0,2,8],[0,8,4],[0,4,6],[0,6,10],[0,10,2],[1,4,9],[1,9,3],[1,3,11],[1,11,6],[1,6,4],[2,10,7],[2,7,5],[4,8,5],[4,5,9],[6,4,9],[6,9,3],[10,6,3],[10,3,7],[8,10,7],[8,7,5]]
       )
     };
 
@@ -180,7 +180,7 @@
           [icoVerts[i+6], icoVerts[i+7], icoVerts[i+8]]
         ]);
       }
-      // 12 face centers → dodecahedron vertices
+      // 20 face centers → dodecahedron vertices
       const dodVerts = [];
       for (const tri of icoFaces) {
         const c = [(tri[0][0]+tri[1][0]+tri[2][0])/3, (tri[0][1]+tri[1][1]+tri[2][1])/3, (tri[0][2]+tri[1][2]+tri[2][2])/3];
@@ -199,6 +199,20 @@
             }
           }
         }
+        // Sort ring vertices by angle around the icosahedron vertex
+        const cx = icoVertsList[vi][0], cy = icoVertsList[vi][1], cz = icoVertsList[vi][2];
+        const up = Math.abs(cz) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+        const ux = cy*up[2] - cz*up[1], uy = cz*up[0] - cx*up[2], uz = cx*up[1] - cy*up[0];
+        const ul = Math.sqrt(ux*ux+uy*uy+uz*uz);
+        const ex = ux/ul, ey = uy/ul, ez = uz/ul;
+        const fx = ey*cz - ez*cy, fy = ez*cx - ex*cz, fz = ex*cy - ey*cx;
+        ring.sort((a, b) => {
+          const da = [dodVerts[a][0]-cx, dodVerts[a][1]-cy, dodVerts[a][2]-cz];
+          const db = [dodVerts[b][0]-cx, dodVerts[b][1]-cy, dodVerts[b][2]-cz];
+          const ae = da[0]*ex+da[1]*ey+da[2]*ez, af = da[0]*fx+da[1]*fy+da[2]*fz;
+          const be = db[0]*ex+db[1]*ey+db[2]*ez, bf = db[0]*fx+db[1]*fy+db[2]*fz;
+          return Math.atan2(af, ae) - Math.atan2(bf, be);
+        });
         dodFaces.push(ring);
       }
       solids.dodecahedron = buildTriangles(dodVerts, dodFaces);
