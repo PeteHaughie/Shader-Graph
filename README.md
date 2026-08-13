@@ -12,7 +12,7 @@ A shader is represented as a graph of typed primitives (Noise → Blur → Mix �
 
 ```sh
 npm install
-brew install glslang          # for shader validation
+brew install glslang           # for shader validation
 npm run dev                    # start the MCP server over stdio
 ```
 

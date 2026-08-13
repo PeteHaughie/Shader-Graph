@@ -1,5 +1,7 @@
 # Holding the Artefact: A Primer on AI, Semantic Graphs, and Persistent Possibility
 
+> "I will show you when I've written more of it, but know that I'm knee deep in the bit where I build a structured code editor on top of a graph database on top of a columnar database" — M. Carroll
+
 ## The central idea
 
 The conventional AI coding model treats a program as **text**.
