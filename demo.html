@@ -61,20 +61,29 @@
 
     void main() {
       vec4 v0 = vec4(aPosition, 1.0);
-      float angle = iTime * 0.5 + 0.4;
-      float c = cos(angle);
-      float s = sin(angle);
+      float yAngle = iTime * 0.5 + 0.4;
+      float yc = cos(yAngle);
+      float ys = sin(yAngle);
       vec4 v1 = v0;
-      v1.x = v0.x * c + v0.z * s;
-      v1.z = -v0.x * s + v0.z * c;
-      vec4 v2 = uModelViewProjection * v1;
-      gl_Position = v2;
+      v1.x = v0.x * yc + v0.z * ys;
+      v1.z = -v0.x * ys + v0.z * yc;
+      float xAngle = iTime * 0.15;
+      float xc = cos(xAngle);
+      float xs = sin(xAngle);
+      vec4 v2 = v1;
+      v2.y = v1.y * xc - v1.z * xs;
+      v2.z = v1.y * xs + v1.z * xc;
+      vec4 v3 = uModelViewProjection * v2;
+      gl_Position = v3;
 
       vec4 n0 = vec4(aNormal, 0.0);
       vec4 n1 = n0;
-      n1.x = n0.x * c + n0.z * s;
-      n1.z = -n0.x * s + n0.z * c;
-      vNormal = n1;
+      n1.x = n0.x * yc + n0.z * ys;
+      n1.z = -n0.x * ys + n0.z * yc;
+      vec4 n2 = n1;
+      n2.y = n1.y * xc - n1.z * xs;
+      n2.z = n1.y * xs + n1.z * xc;
+      vNormal = n2;
   }`;
 
     // --- Background gradient shader (vaporwave pink → cyan) ---
