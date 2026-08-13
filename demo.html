@@ -31,7 +31,7 @@
 
 <body>
   <canvas id="c"></canvas>
-  <div id="info">Prism faces: <span id="sides">3</span> &nbsp;|&nbsp; Time: <span id="time">0</span>s / 60s &nbsp;|&nbsp; Vertices: <span id="verts">0</span></div>
+  <div id="info">Solid: <span id="solid">Tetrahedron</span> &nbsp;|&nbsp; Time: <span id="time">0</span>s / 60s &nbsp;|&nbsp; Vertices: <span id="verts">0</span></div>
   <script>
     const canvas = document.getElementById('c');
     const gl = canvas.getContext('webgl');
@@ -122,68 +122,97 @@
     const mvpUni = gl.getUniformLocation(prog, 'uModelViewProjection');
     const timeUni = gl.getUniformLocation(prog, 'iTime');
 
-    // --- Geometry: n-sided prism ---
-    function makePrism(sides) {
-      const verts = [];
-      const norms = [];
-      const zFront = 0.5;
-      const zBack = -0.5;
-
-      // Generate rim vertices
-      const rim = [];
-      for (let i = 0; i < sides; i++) {
-        const a = (i / sides) * Math.PI * 2;
-        rim.push({ x: Math.cos(a), y: Math.sin(a) });
-      }
-
-      // Front face — triangle fan as triangles: center + rim[i], rim[i+1]
-      for (let i = 0; i < sides; i++) {
-        const j = (i + 1) % sides;
-        verts.push(0, 0, zFront); norms.push(0, 0, 1);
-        verts.push(rim[i].x, rim[i].y, zFront); norms.push(0, 0, 1);
-        verts.push(rim[j].x, rim[j].y, zFront); norms.push(0, 0, 1);
-      }
-
-      // Back face — triangle fan as triangles, reversed winding
-      for (let i = 0; i < sides; i++) {
-        const j = (i + 1) % sides;
-        verts.push(0, 0, zBack); norms.push(0, 0, -1);
-        verts.push(rim[j].x, rim[j].y, zBack); norms.push(0, 0, -1);
-        verts.push(rim[i].x, rim[i].y, zBack); norms.push(0, 0, -1);
-      }
-
-      // Side faces — quads as 2 triangles each
-      for (let i = 0; i < sides; i++) {
-        const j = (i + 1) % sides;
-        const mid = (i / sides + 1 / (sides * 2)) * Math.PI * 2;
-        const nx = Math.cos(mid);
-        const ny = Math.sin(mid);
-        // Triangle 1: back[i], back[j], front[i]
-        verts.push(rim[i].x, rim[i].y, zBack); norms.push(nx, ny, 0);
-        verts.push(rim[j].x, rim[j].y, zBack); norms.push(nx, ny, 0);
-        verts.push(rim[i].x, rim[i].y, zFront); norms.push(nx, ny, 0);
-        // Triangle 2: back[j], front[j], front[i]
-        verts.push(rim[j].x, rim[j].y, zBack); norms.push(nx, ny, 0);
-        verts.push(rim[j].x, rim[j].y, zFront); norms.push(nx, ny, 0);
-        verts.push(rim[i].x, rim[i].y, zFront); norms.push(nx, ny, 0);
-      }
-
-      return {
-        positions: new Float32Array(verts),
-        normals: new Float32Array(norms),
-        count: verts.length / 3
-      };
+    // --- Geometry: Platonic solids ---
+    function faceNormal(a, b, c) {
+      const u = [b[0]-a[0], b[1]-a[1], b[2]-a[2]];
+      const v = [c[0]-a[0], c[1]-a[1], c[2]-a[2]];
+      const n = [u[1]*v[2]-u[2]*v[1], u[2]*v[0]-u[0]*v[2], u[0]*v[1]-u[1]*v[0]];
+      const l = Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);
+      return [n[0]/l, n[1]/l, n[2]/l];
     }
 
-    let currentSides = 3;
-    let geo = makePrism(currentSides);
+    function buildTriangles(verts, faces) {
+      const positions = [], normals = [];
+      for (const f of faces) {
+        if (f.length === 3) {
+          const n = faceNormal(verts[f[0]], verts[f[1]], verts[f[2]]);
+          for (const i of f) { positions.push(...verts[i]); normals.push(...n); }
+        } else {
+          for (let i = 1; i < f.length - 1; i++) {
+            const tri = [f[0], f[i], f[i + 1]];
+            const n = faceNormal(verts[tri[0]], verts[tri[1]], verts[tri[2]]);
+            for (const j of tri) { positions.push(...verts[j]); normals.push(...n); }
+          }
+        }
+      }
+      return { positions: new Float32Array(positions), normals: new Float32Array(normals), count: positions.length / 3 };
+    }
+
+    const φ = (1 + Math.sqrt(5)) / 2;
+
+    const solids = {
+      tetrahedron: buildTriangles(
+        [[1,1,1],[1,-1,-1],[-1,1,-1],[-1,-1,1]],
+        [[0,1,2],[0,2,3],[0,3,1],[1,3,2]]
+      ),
+      cube: buildTriangles(
+        [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],
+        [[0,1,2,3],[4,7,6,5],[0,4,5,1],[3,2,6,7],[0,3,7,4],[1,5,6,2]]
+      ),
+      octahedron: buildTriangles(
+        [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
+        [[4,0,2],[4,2,1],[4,1,3],[4,3,0],[5,2,0],[5,1,2],[5,3,1],[5,0,3]]
+      ),
+      icosahedron: buildTriangles(
+        [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]],
+        [[0,2,4],[0,4,6],[0,6,10],[0,10,8],[0,8,2],[1,3,5],[1,5,7],[1,7,11],[1,11,9],[1,9,3],[2,8,3],[2,3,9],[4,2,9],[4,9,5],[6,4,5],[6,5,7],[10,6,7],[10,7,11],[8,10,11],[8,11,3]]
+      )
+    };
+
+    // Dodecahedron via dual of icosahedron
+    (function() {
+      const icoVerts = solids.icosahedron.positions;
+      const icoFaces = [];
+      for (let i = 0; i < icoVerts.length; i += 9) {
+        icoFaces.push([
+          [icoVerts[i], icoVerts[i+1], icoVerts[i+2]],
+          [icoVerts[i+3], icoVerts[i+4], icoVerts[i+5]],
+          [icoVerts[i+6], icoVerts[i+7], icoVerts[i+8]]
+        ]);
+      }
+      // 12 face centers → dodecahedron vertices
+      const dodVerts = [];
+      for (const tri of icoFaces) {
+        const c = [(tri[0][0]+tri[1][0]+tri[2][0])/3, (tri[0][1]+tri[1][1]+tri[2][1])/3, (tri[0][2]+tri[1][2]+tri[2][2])/3];
+        const l = Math.sqrt(c[0]*c[0]+c[1]*c[1]+c[2]*c[2]);
+        dodVerts.push([c[0]/l, c[1]/l, c[2]/l]);
+      }
+      // 12 faces: for each icosahedron vertex, collect the 5 surrounding face centers
+      const icoVertsList = [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]];
+      const dodFaces = [];
+      for (let vi = 0; vi < 12; vi++) {
+        const ring = [];
+        for (let fi = 0; fi < icoFaces.length; fi++) {
+          for (const v of icoFaces[fi]) {
+            if (Math.abs(v[0]-icoVertsList[vi][0])<0.01 && Math.abs(v[1]-icoVertsList[vi][1])<0.01 && Math.abs(v[2]-icoVertsList[vi][2])<0.01) {
+              ring.push(fi); break;
+            }
+          }
+        }
+        dodFaces.push(ring);
+      }
+      solids.dodecahedron = buildTriangles(dodVerts, dodFaces);
+    })();
+
+    const solidNames = ["tetrahedron", "cube", "octahedron", "dodecahedron", "icosahedron"];
+    let currentSolid = 0;
+    let geo = solids[solidNames[0]];
 
     const posBuf = gl.createBuffer();
     const normBuf = gl.createBuffer();
 
-    function uploadGeometry(sides) {
-      currentSides = sides;
-      geo = makePrism(sides);
+    function uploadGeometry(name) {
+      geo = solids[name];
 
       gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
       gl.bufferData(gl.ARRAY_BUFFER, geo.positions, gl.STATIC_DRAW);
@@ -196,7 +225,7 @@
       gl.vertexAttribPointer(normAttr, 3, gl.FLOAT, false, 0, 0);
     }
 
-    uploadGeometry(3);
+    uploadGeometry("tetrahedron");
 
     gl.enable(gl.DEPTH_TEST);
 
@@ -236,10 +265,11 @@
       const elapsed = (performance.now() - startTime) / 1000;
       const t = elapsed % 60;
 
-      // Cycle polygon sides: 3 to 20 over 60 seconds
-      const sides = Math.min(3 + Math.floor((t / 60) * 18), 20);
-      if (sides !== currentSides) {
-        uploadGeometry(sides);
+      // Cycle through 5 Platonic solids over 60 seconds
+      const solidIdx = Math.min(Math.floor(t / 12), 4);
+      if (solidIdx !== currentSolid) {
+        currentSolid = solidIdx;
+        uploadGeometry(solidNames[solidIdx]);
       }
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
@@ -255,7 +285,7 @@
 
       gl.drawArrays(gl.TRIANGLES, 0, geo.count);
 
-      document.getElementById('sides').textContent = sides;
+      document.getElementById('solid').textContent = solidNames[solidIdx].charAt(0).toUpperCase() + solidNames[solidIdx].slice(1);
       document.getElementById('verts').textContent = geo.count;
       document.getElementById('time').textContent = Math.floor(t);
 
