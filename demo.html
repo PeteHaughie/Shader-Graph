@@ -271,6 +271,7 @@
       const φ = (1 + Math.sqrt(5)) / 2;
       let verts = [[0,1,φ],[0,1,-φ],[0,-1,φ],[0,-1,-φ],[1,φ,0],[1,-φ,0],[-1,φ,0],[-1,-φ,0],[φ,0,1],[φ,0,-1],[-φ,0,1],[-φ,0,-1]];
       let faces = ensureOutwardWinding(verts, computeFaces(verts));
+      verts = verts.map(v => { const l = Math.hypot(v[0], v[1], v[2]); return [v[0]/l, v[1]/l, v[2]/l]; });
       for (let l = 0; l < level; l++) {
         const edgeMap = new Map();
         const newVerts = verts.map(v => [...v]);
