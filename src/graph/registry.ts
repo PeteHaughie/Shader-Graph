@@ -172,6 +172,20 @@ const PRIMITIVES: PrimitiveDefinition[] = [
   },
   {
     graphType: GraphType.Fragment,
+    typeName: "TexelSize",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "Swizzle",
+    inputs: [{ name: "input", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "pattern", type: "string", default: "xxxx" }],
+  },
+  {
+    graphType: GraphType.Fragment,
     typeName: "SmoothStep",
     inputs: [
       { name: "value", type: PortType.Vec4 },

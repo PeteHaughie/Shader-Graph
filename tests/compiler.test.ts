@@ -343,6 +343,51 @@ describe("new primitives", () => {
       return connect(g, nodes[3].id, "out", nodes[4].id, "source");
     }));
 
+  it("TexelSize", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "TexelSize", {});
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      return connect(g, nodes[0].id, "out", nodes[1].id, "source");
+    }));
+
+  it("Swizzle", () =>
+    testPrimitive((g) => {
+      g = addNode(g, "FragCoord", {});
+      g = addNode(g, "Swizzle", { pattern: "yxxx" });
+      g = addNode(g, "Output", {});
+      const nodes = [...g.nodes.values()];
+      g = connect(g, nodes[0].id, "out", nodes[1].id, "input");
+      return connect(g, nodes[1].id, "out", nodes[2].id, "source");
+    }));
+
+  it("Exact interlacing pipeline", () =>
+    testPrimitive((g) => {
+      const ids = {};
+      g = addNode(g, "FragCoord", {}); ids.fc = [...g.nodes.keys()].pop();
+      g = addNode(g, "Floor", {}); ids.fl = [...g.nodes.keys()].pop();
+      g = addNode(g, "Mod", { divisor: 2 }); ids.md = [...g.nodes.keys()].pop();
+      g = addNode(g, "Swizzle", { pattern: "yxxx" }); ids.sw = [...g.nodes.keys()].pop();
+      g = addNode(g, "SolidColor", { r: 0.5, g: 0, b: 0, a: 0 }); ids.s1 = [...g.nodes.keys()].pop();
+      g = addNode(g, "Multiply", {}); ids.m1 = [...g.nodes.keys()].pop();
+      g = addNode(g, "TexelSize", {}); ids.ts = [...g.nodes.keys()].pop();
+      g = addNode(g, "Multiply", {}); ids.m2 = [...g.nodes.keys()].pop();
+      g = addNode(g, "Add", {}); ids.ad = [...g.nodes.keys()].pop();
+      g = addNode(g, "Texture", { url: "webcam.jpg" }); ids.tx = [...g.nodes.keys()].pop();
+      g = addNode(g, "Output", {}); ids.ot = [...g.nodes.keys()].pop();
+      g = connect(g, ids.fc, "out", ids.fl, "value");
+      g = connect(g, ids.fl, "out", ids.md, "value");
+      g = connect(g, ids.md, "out", ids.sw, "input");
+      g = connect(g, ids.sw, "out", ids.m1, "a");
+      g = connect(g, ids.s1, "out", ids.m1, "b");
+      g = connect(g, ids.m1, "out", ids.m2, "a");
+      g = connect(g, ids.ts, "out", ids.m2, "b");
+      g = connect(g, ids.m2, "out", ids.ad, "a");
+      g = connect(g, ids.fc, "out", ids.ad, "b");
+      g = connect(g, ids.ad, "out", ids.tx, "uv");
+      return connect(g, ids.tx, "out", ids.ot, "source");
+    }));
+
   it("Time wired to Gradient.angle for rotating gradient", () =>
     testPrimitive((g) => {
       g = addNode(g, "SolidColor", { r: 0, g: 0, b: 1, a: 1 });

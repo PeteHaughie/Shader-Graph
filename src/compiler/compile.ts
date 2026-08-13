@@ -245,6 +245,20 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
         nodeCode.push(`  vec4 ${varName} = mod(${mInput}, ${wiredParam(inputVarMap, node.params, "divisor", 2)});`);
         break;
       }
+      case "TexelSize": {
+        nodeCode.push(`  vec4 ${varName} = vec4(1.0 / iResolution, 0.0, 0.0);`);
+        break;
+      }
+      case "Swizzle": {
+        const swInput = inputVarMap.get("input") ?? "vec4(0.0)";
+        const pattern = (node.params.pattern as string) ?? "xxxx";
+        const comps = pattern.split("").map((c) => {
+          const idx = "xyzw".indexOf(c);
+          return idx >= 0 ? `${swInput}.${c}` : "0.0";
+        });
+        nodeCode.push(`  vec4 ${varName} = vec4(${comps.join(", ")});`);
+        break;
+      }
       case "Noise": {
         nodeCode.push(`  vec4 ${varName} = noise1d(${wiredParam(inputVarMap, node.params, "scale", 1)}, ${wiredParam(inputVarMap, node.params, "seed", 0)});`);
         break;
