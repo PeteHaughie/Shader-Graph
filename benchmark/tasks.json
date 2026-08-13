@@ -1,0 +1,42 @@
+[
+  {
+    "id": "lava-lamp",
+    "name": "Lava Lamp",
+    "brief": "Build a fragment shader that looks like a lava lamp: three layers of noise at different scales (coarse ~2, medium ~5, fine ~10), blended together and tinted with a blue-to-orange gradient, with a glow effect on top.",
+    "scoring": {
+      "requiredPrimitives": ["Noise", "Mix", "Glow"],
+      "minNodes": 5,
+      "description": "Tests complex topology — can the AI wire a multi-node graph correctly?"
+    }
+  },
+  {
+    "id": "slow-lava",
+    "name": "Slow Lava",
+    "brief": "Build a fragment shader that looks like slow-moving lava. Use noise with deep red, orange, and black colors. The movement should feel organic and slow. Tune parameters to make it look right — the colors need to be hot (reds/oranges), and the noise movement should be subtle.",
+    "scoring": {
+      "requiredPrimitives": ["Noise", "HueShift", "BrightnessContrast"],
+      "minNodes": 4,
+      "description": "Tests parameter hunting — can the AI find the right values within constrained ranges?"
+    }
+  },
+  {
+    "id": "kaleidoscope",
+    "name": "Kaleidoscope Refactor",
+    "brief": "Start with a simple gradient shader (Gradient → Output). Refactor it to add 4-way kaleidoscope symmetry: mirror the gradient in both X and Y axes so the output has a symmetrical pattern with 4 mirrored quadrants. The final shader should show the gradient repeated as a kaleidoscope.",
+    "scoring": {
+      "requiredPrimitives": ["Gradient", "Mix", "Texture"],
+      "minNodes": 5,
+      "description": "Tests structural reasoning — can the AI rewire a graph by inserting new nodes?"
+    }
+  },
+  {
+    "id": "vignette",
+    "name": "Vignette Addition",
+    "brief": "Here is a working noise shader:\n\nNoise(scale=3, seed=1) → Output\n\nAdd a dark vignette effect that darkens the edges of the output without changing the noise pattern in the center. The vignette should be subtle — the center should be unchanged, and the corners should be about 50% darker. Do not break the existing noise output.",
+    "scoring": {
+      "requiredPrimitives": ["Noise", "Multiply"],
+      "minNodes": 3,
+      "description": "Tests surgical precision — can the AI make targeted changes without collateral damage?"
+    }
+  }
+]
