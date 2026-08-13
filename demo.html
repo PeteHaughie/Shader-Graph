@@ -77,7 +77,25 @@
       vNormal = n1;
   }`;
 
-    // --- Fragment shader ---
+    // --- Background gradient shader (vaporwave pink → cyan) ---
+    const bgVertSrc = `#version 100
+    precision highp float;
+    attribute vec2 aPos;
+    void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+
+    const bgFragSrc = `#version 100
+    precision highp float;
+    uniform vec2 iResolution;
+    void main() {
+      vec4 v0 = vec4(1.0, 0.0, 1.0, 1.0);
+      vec4 v1 = vec4(0.0, 1.0, 1.0, 1.0);
+      vec2 grad_dir = vec2(0.0, 1.0);
+      float grad_t = dot(gl_FragCoord.xy, grad_dir) / dot(iResolution, abs(grad_dir));
+      vec4 v2 = mix(v0, v1, clamp(grad_t, 0.0, 1.0));
+      gl_FragColor = v2;
+    }`;
+
+    // --- Fragment shader (3D object lighting) ---
     const fragSrc = `#version 100
     precision highp float;
 
@@ -121,6 +139,21 @@
     const normAttr = gl.getAttribLocation(prog, 'aNormal');
     const mvpUni = gl.getUniformLocation(prog, 'uModelViewProjection');
     const timeUni = gl.getUniformLocation(prog, 'iTime');
+
+    // --- Background gradient program ---
+    const bgVs = compileShader(bgVertSrc, gl.VERTEX_SHADER);
+    const bgFs = compileShader(bgFragSrc, gl.FRAGMENT_SHADER);
+    const bgProg = gl.createProgram();
+    gl.attachShader(bgProg, bgVs);
+    gl.attachShader(bgProg, bgFs);
+    gl.linkProgram(bgProg);
+    const bgPosAttr = gl.getAttribLocation(bgProg, 'aPos');
+    const bgResUni = gl.getUniformLocation(bgProg, 'iResolution');
+
+    // Full-screen quad
+    const quadBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1]), gl.STATIC_DRAW);
 
     // --- Geometry: Platonic solids ---
     function faceNormal(a, b, c) {
@@ -391,7 +424,27 @@
       }
 
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      gl.clearColor(0, 0, 0, 1);
+
+      // Draw vaporwave gradient background
+      gl.useProgram(bgProg);
+      gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+      gl.enableVertexAttribArray(bgPosAttr);
+      gl.vertexAttribPointer(bgPosAttr, 2, gl.FLOAT, false, 0, 0);
+      gl.uniform2f(bgResUni, canvas.width, canvas.height);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      gl.depthMask(true);
+      gl.enable(gl.DEPTH_TEST);
+
+      // Re-bind object attribute pointers (background quad may have overwritten location 0)
+      gl.useProgram(prog);
+      gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+      gl.enableVertexAttribArray(posAttr);
+      gl.vertexAttribPointer(posAttr, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+      gl.enableVertexAttribArray(normAttr);
+      gl.vertexAttribPointer(normAttr, 3, gl.FLOAT, false, 0, 0);
 
       gl.uniform1f(timeUni, t);
 
