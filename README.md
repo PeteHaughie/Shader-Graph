@@ -1,4 +1,4 @@
-# forbidden-zone
+# Shader Graph
 
 A semantic shader graph — an MCP server that lets an AI build GLSL fragment shaders by manipulating a typed, immutable graph instead of writing source text directly.
 
