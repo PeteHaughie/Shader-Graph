@@ -168,7 +168,12 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
     [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
       state.nodes.get(e.fromNode)?.typeName === "Texture")
   ).length;
-  for (let i = 0; i < texCount + blurTexCount; i++) {
+  const displaceTexCount = [...state.nodes.values()].filter((n) =>
+    n.typeName === "Displace" &&
+    [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
+      state.nodes.get(e.fromNode)?.typeName === "Texture")
+  ).length;
+  for (let i = 0; i < texCount + blurTexCount + displaceTexCount; i++) {
     uniforms.push({ name: `uTexture${i}`, type: "sampler2D", semantic: "texture" });
   }
   const passes: ShaderPass[] = [];
@@ -361,7 +366,17 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
       }
       case "Displace": {
         const image = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = ${image};`);
+        const map = inputVarMap.get("map") ?? "vec4(0.0)";
+        const dispSrcNode = inputVarMap.has("image")
+          ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode)
+          : null;
+        if (dispSrcNode?.typeName === "Texture") {
+          const ti = textureIndexMap.get(dispSrcNode.id) ?? 0;
+          nodeCode.push(`  vec2 disp_uv = gl_FragCoord.xy / iResolution + (${map}.rg * ${wiredParam(inputVarMap, node.params, "amount", 0.05)});`);
+          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, disp_uv);`);
+        } else {
+          nodeCode.push(`  vec4 ${varName} = ${image};`);
+        }
         break;
       }
       case "BrightnessContrast": {
@@ -522,13 +537,18 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
     [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
       state.nodes.get(e.fromNode)?.typeName === "Texture")
   ).length;
+  const displaceTexCount = [...state.nodes.values()].filter((n) =>
+    n.typeName === "Displace" &&
+    [...state.edges.values()].some((e) => e.toNode === n.id && e.toPort === "image" &&
+      state.nodes.get(e.fromNode)?.typeName === "Texture")
+  ).length;
 
   const parts: string[] = [glslHeader(target)];
   if (target.fragOutputDecl) parts.push(target.fragOutputDecl);
   if (typeNames.includes("NormalMap") && target.derivativesExt) {
     parts.push(target.derivativesExt);
   }
-  for (let i = 0; i < texCount + blurTexCount; i++) {
+  for (let i = 0; i < texCount + blurTexCount + displaceTexCount; i++) {
     parts.push(`uniform sampler2D uTexture${i};\n`);
   }
   if (typeNames.includes("ShadowMap")) {

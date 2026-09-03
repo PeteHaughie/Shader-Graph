@@ -131,6 +131,17 @@ server.registerTool(
 );
 
 server.registerTool(
+  "clear_graph",
+  {
+    description: "Reset the fragment graph to an empty state (removes all nodes and edges)",
+  },
+  async () => {
+    graph = createGraph();
+    return { content: [{ type: "text", text: "Fragment graph cleared" }] };
+  },
+);
+
+server.registerTool(
   "set_parameter",
   {
     description: "Change a node's parameter value",
@@ -317,6 +328,17 @@ server.registerTool(
   async ({ fromNode, fromPort, toNode, toPort }) => {
     vtxGraph = connect(vtxGraph, fromNode, fromPort, toNode, toPort);
     return { content: [{ type: "text", text: `Connected ${fromNode}:${fromPort} → ${toNode}:${toPort}` }] };
+  },
+);
+
+server.registerTool(
+  "vtx_clear_graph",
+  {
+    description: "Reset the vertex graph to an empty state (removes all nodes and edges)",
+  },
+  async () => {
+    vtxGraph = createGraph();
+    return { content: [{ type: "text", text: "Vertex graph cleared" }] };
   },
 );
 

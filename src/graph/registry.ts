@@ -168,7 +168,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     typeName: "Mod",
     inputs: [{ name: "value", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "divisor", type: "float", default: 2, min: 0.01, max: 100, isInput: true }],
+    params: [      { name: "divisor", type: "float", default: 2, min: 0.01, max: 2000, isInput: true }],
   },
   {
     graphType: GraphType.Fragment,

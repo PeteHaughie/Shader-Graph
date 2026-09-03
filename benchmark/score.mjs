@@ -64,6 +64,11 @@ function findParamViolations(source) {
     const f = parseFloat(mixFactor[1]);
     if (f < 0 || f > 1) violations.push(`Mix factor ${f} out of range [0, 1]`);
   }
+  const dispAmount = source.match(/disp_uv.*\+\s*\(.*\.rg\s*\*\s*([\d.]+)\)/);
+  if (dispAmount) {
+    const a = parseFloat(dispAmount[1]);
+    if (a < 0 || a > 1) violations.push(`Displace amount ${a} out of range [0, 1]`);
+  }
   return violations;
 }
 

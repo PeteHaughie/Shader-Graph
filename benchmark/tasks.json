@@ -60,6 +60,16 @@
     }
   },
   {
+    "id": "rutt-etra",
+    "name": "Rutt-Etra Scanline Displacement",
+    "brief": "Create a fragment shader applying the classic Rutt-Etra video effect. Sample a texture, then for each pixel: (1) compute luminance from the texture color using standard Rec.709 coefficients (0.299R + 0.587G + 0.114B), (2) compute which horizontal scanline the pixel belongs to using FragCoord/Floor/Mod, (3) displace the Y-coordinate by an amount proportional to the luminance, (4) resample the texture at the displaced coordinates, (5) overlay a scanline pattern so individual lines are visible. Use Texture, FragCoord, Swizzle, Multiply, Add, Floor, Mod, and Displace primitives. Tune Displace amount (0.02-0.1) and scanline count (200-300).",
+    "scoring": {
+      "requiredPrimitives": ["Texture", "Displace"],
+      "minNodes": 8,
+      "description": "Tests luminance extraction from primitives, coordinate math for scanlines, and UV displacement composition."
+    }
+  },
+  {
     "id": "geodesic",
     "name": "Geodesic Sphere",
     "brief": "Create a geodesic sphere by subdividing an icosahedron. Generate vertex data for subdivision levels 0 through 4 (level 0 = 20 faces, level 4 = 5120 faces). Each subdivision splits every triangle into 4 by creating midpoints on each edge and projecting them onto the unit sphere. Render the result with vertex shader rotation and fragment shader lighting (red on black), cycling through levels 0-4 over 60 seconds.",

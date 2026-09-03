@@ -40,6 +40,7 @@ async function main() {
 
   // Task 1: Lava Lamp - SmoothNoise -> Mix -> Glow -> Output
   console.log("Building Lava Lamp...");
+  await req("tools/call", {name:"clear_graph",arguments:{}});
   let n = await req("tools/call", {name:"add_node",arguments:{typeName:"SmoothNoise",params:{scale:2,seed:0}}});
   const sn1 = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"SmoothNoise",params:{scale:5,seed:3}}});
@@ -69,7 +70,7 @@ async function main() {
   writeFileSync("/tmp/bench_ll_graph.frag", t1.split("\n").slice(s1).join("\n"));
   const { execFileSync } = await import("node:child_process");
   const { scoreGLSL } = await import("./score.mjs");
-  const tasks1 = JSON.parse(await import("fs").then(f => f.readFileSync("tasks.json","utf-8")));
+  const tasks1 = JSON.parse(await import("fs").then(f => f.readFileSync(new URL("tasks.json", import.meta.url), "utf-8")));
   const task1 = tasks1.find(t => t.id === "lava-lamp");
   const sc1 = await scoreGLSL(t1.split("\n").slice(s1).join("\n"), task1);
   saveResult("lava-lamp", "graph", toolCount, 2, sc1, "SmoothNoise(2,5,10) -> Mix -> Palette(fire) -> Glow(1.5) -> Output");
@@ -77,6 +78,7 @@ async function main() {
 
   // Task 2: Slow Lava - FractalNoise -> Palette(fire) -> Output
   toolCount = 0;
+  await req("tools/call", {name:"clear_graph",arguments:{}});
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"FractalNoise",params:{scale:3,seed:0,octaves:4,lacunarity:2,gain:0.5}}});
   const fn = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"Palette",params:{mode:"fire"}}});
@@ -96,6 +98,7 @@ async function main() {
 
   // Task 3: Kaleidoscope - Gradient + Checkerboard -> Mix -> Output
   toolCount = 0;
+  await req("tools/call", {name:"clear_graph",arguments:{}});
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"SolidColor",params:{r:0,g:0.2,b:0.8,a:1}}});
   const bl = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"SolidColor",params:{r:1,g:0.5,b:0,a:1}}});
@@ -130,6 +133,7 @@ async function main() {
 
   // Task 4: Vignette - Noise -> Multiply(by Gradient vignette) -> Output
   toolCount = 0;
+  await req("tools/call", {name:"clear_graph",arguments:{}});
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"Noise",params:{scale:3,seed:1}}});
   const ns = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"SolidColor",params:{r:1,g:1,b:1,a:1}}});
@@ -156,14 +160,18 @@ async function main() {
   saveResult("vignette", "graph", toolCount, 1, sc4, "Noise(3) * Gradient(white->black) via Multiply");
   console.log("Vignette:", sc4.totalScore);
 
-  // Task 5: Dreamy Blur - Texture -> Blur(radius=10) -> Output (Blur now does real blur when source is Texture)
+  // Task 5: Dreamy Blur - FragCoord -> Texture(uv) -> Blur(radius=10) -> Output
   toolCount = 0;
+  await req("tools/call", {name:"clear_graph",arguments:{}});
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"FragCoord",params:{}}});
+  const dbFc = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"Texture",params:{url:""}}});
   const tx = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"Blur",params:{radius:10}}});
   const br = JSON.parse(n.result.content[0].text).nodeId;
   n = await req("tools/call", {name:"add_node",arguments:{typeName:"Output",params:{}}});
   const out5 = JSON.parse(n.result.content[0].text).nodeId;
+  await req("tools/call", {name:"connect",arguments:{fromNode:dbFc,fromPort:"out",toNode:tx,toPort:"uv"}});
   await req("tools/call", {name:"connect",arguments:{fromNode:tx,fromPort:"out",toNode:br,toPort:"image"}});
   await req("tools/call", {name:"connect",arguments:{fromNode:br,fromPort:"out",toNode:out5,toPort:"source"}});
   const c5 = await req("tools/call", {name:"compile",arguments:{}});
@@ -174,6 +182,46 @@ async function main() {
   const sc5 = await scoreGLSL(t5.split("\n").slice(s5).join("\n"), task5);
   saveResult("dreamy-blur", "graph", toolCount, 1, sc5, "Texture -> Blur(radius=10) -> Output. Real 3x3 box blur on uTexture.");
   console.log("Dreamy Blur:", sc5.totalScore);
+
+  // Task 8: Rutt-Etra - Texture -> Displace(Y-coord map, amount=0.05) with scanline overlay via Floor/Mod
+  toolCount = 0;
+  await req("tools/call", {name:"clear_graph",arguments:{}});
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Texture",params:{url:""}}});
+  const reTx = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"FragCoord",params:{}}});
+  const reFc = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Swizzle",params:{pattern:"yyyy"}}});
+  const reSw = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Displace",params:{amount:0.05}}});
+  const reDp = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Floor",params:{}}});
+  const reFl = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Mod",params:{divisor:240}}});
+  const reMd = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Swizzle",params:{pattern:"yyyy"}}});
+  const reSw2 = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Multiply",params:{}}});
+  const reMu = JSON.parse(n.result.content[0].text).nodeId;
+  n = await req("tools/call", {name:"add_node",arguments:{typeName:"Output",params:{}}});
+  const reOut = JSON.parse(n.result.content[0].text).nodeId;
+  await req("tools/call", {name:"connect",arguments:{fromNode:reFc,fromPort:"out",toNode:reTx,toPort:"uv"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reFc,fromPort:"out",toNode:reSw,toPort:"input"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reTx,fromPort:"out",toNode:reDp,toPort:"image"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reSw,fromPort:"out",toNode:reDp,toPort:"map"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reFc,fromPort:"out",toNode:reFl,toPort:"value"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reFl,fromPort:"out",toNode:reMd,toPort:"value"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reMd,fromPort:"out",toNode:reSw2,toPort:"input"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reDp,fromPort:"out",toNode:reMu,toPort:"a"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reSw2,fromPort:"out",toNode:reMu,toPort:"b"}});
+  await req("tools/call", {name:"connect",arguments:{fromNode:reMu,fromPort:"out",toNode:reOut,toPort:"source"}});
+  const c8 = await req("tools/call", {name:"compile",arguments:{}});
+  const t8 = c8.result.content[0].text;
+  const s8 = t8.split("\n").findIndex(l => l.startsWith("#version"));
+  writeFileSync("/tmp/bench_re_graph.frag", t8.split("\n").slice(s8).join("\n"));
+  const task8 = tasks1.find(t => t.id === "rutt-etra");
+  const sc8 = await scoreGLSL(t8.split("\n").slice(s8).join("\n"), task8);
+  saveResult("rutt-etra", "graph", toolCount, 1, sc8, "Texture -> Displace(map=FragCoord.y, amount=0.05) with scanline overlay via Floor/Mod/Swizzle/Multiply");
+  console.log("Rutt-Etra:", sc8.totalScore);
 
   cp.kill();
   console.log("\nDone. All graph mode results saved.");
