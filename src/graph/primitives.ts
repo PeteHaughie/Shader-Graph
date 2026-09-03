@@ -6,6 +6,7 @@ export enum PortType {
 export interface PortSpec {
   name: string;
   type: PortType;
+  optional?: boolean;
 }
 
 export interface ParamSpec {

@@ -86,3 +86,34 @@ export function topologicalSort(state: GraphState): { order: string[]; hasCycle:
 
   return { order, hasCycle };
 }
+
+export function topologicalSortSubset(state: GraphState, ids: Set<string>): { order: string[]; hasCycle: boolean } {
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+  const order: string[] = [];
+  let hasCycle = false;
+
+  function visit(nodeId: string): void {
+    if (!ids.has(nodeId)) return;
+    if (visited.has(nodeId)) return;
+    if (visiting.has(nodeId)) {
+      hasCycle = true;
+      return;
+    }
+    visiting.add(nodeId);
+    for (const edge of state.edges.values()) {
+      if (edge.toNode === nodeId) {
+        visit(edge.fromNode);
+      }
+    }
+    visiting.delete(nodeId);
+    visited.add(nodeId);
+    order.push(nodeId);
+  }
+
+  for (const nodeId of ids) {
+    visit(nodeId);
+  }
+
+  return { order, hasCycle };
+}

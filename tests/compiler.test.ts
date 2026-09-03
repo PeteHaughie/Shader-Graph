@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createGraph, addNode, connect } from "../src/graph/operations.js";
-import { compileGraph, validateGLSL } from "../src/compiler/compile.js";
+import { compileGraph, validateGLSL, describeFragmentGraph } from "../src/compiler/compile.js";
 
 async function testPrimitive(build: (g: ReturnType<typeof createGraph>) => ReturnType<typeof createGraph>): Promise<void> {
   let g = createGraph();
@@ -522,6 +522,105 @@ describe("normal map and shadow map", () => {
       g = connect(g, nodes[1].id, "out", nodes[2].id, "b");
       return connect(g, nodes[2].id, "out", nodes[3].id, "source");
     }));
+});
+
+describe("multi-pass compilation", () => {
+  function twoPassGraph() {
+    let g = createGraph();
+    g = addNode(g, "Noise", { scale: 1, seed: 0 });
+    g = addNode(g, "PassTarget", { name: "blurBuf", persistent: 0, float: 0, width: "$WIDTH", height: "$HEIGHT" });
+    g = addNode(g, "ReadBuffer", { name: "blurBuf" });
+    g = addNode(g, "Output", {});
+    const [noise, target, read, output] = [...g.nodes.values()];
+    g = connect(g, noise.id, "out", target.id, "source");
+    g = connect(g, read.id, "out", output.id, "source");
+    return g;
+  }
+
+  it("emits PASSINDEX branches and buffer samplers", () => {
+    const compiled = compileGraph(twoPassGraph());
+    expect(compiled.valid).toBe(true);
+    const src = compiled.source;
+    expect(src).toContain("uniform int PASSINDEX;");
+    expect(src).toContain("uniform sampler2D blurBuf;");
+    expect(src).toContain("if (PASSINDEX == 0) {");
+    expect(src).toContain("else if (PASSINDEX == 1) {");
+    expect(src).toContain("texture2D(blurBuf");
+  });
+
+  it("orders the write pass before the read pass", () => {
+    const compiled = compileGraph(twoPassGraph());
+    const src = compiled.source;
+    const writePos = src.indexOf("gl_FragColor = v0;");
+    const readPos = src.indexOf("texture2D(blurBuf");
+    expect(writePos).toBeGreaterThan(-1);
+    expect(readPos).toBeGreaterThan(writePos);
+  });
+
+  it("compiles two-pass graphs to valid GLSL", async () => {
+    const compiled = compileGraph(twoPassGraph());
+    expect(compiled.valid, compiled.errors).toBe(true);
+    const validation = await validateGLSL(compiled.source);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("compiles persistent feedback graphs to valid GLSL", async () => {
+    let g = createGraph();
+    g = addNode(g, "Noise", { scale: 1, seed: 0 });
+    g = addNode(g, "ReadBuffer", { name: "fb" });
+    g = addNode(g, "Mix", { factor: 0.5 });
+    g = addNode(g, "PassTarget", { name: "fb", persistent: 1, float: 1, width: "$WIDTH/2.0", height: "$HEIGHT/2.0" });
+    g = addNode(g, "ReadBuffer", { name: "fb" });
+    g = addNode(g, "Output", {});
+    const [noise, read1, mix, target, read2, output] = [...g.nodes.values()];
+    g = connect(g, noise.id, "out", mix.id, "a");
+    g = connect(g, read1.id, "out", mix.id, "b");
+    g = connect(g, mix.id, "out", target.id, "source");
+    g = connect(g, read2.id, "out", output.id, "source");
+    const compiled = compileGraph(g);
+    expect(compiled.valid, compiled.errors).toBe(true);
+    const validation = await validateGLSL(compiled.source);
+    expect(validation.valid).toBe(true);
+  });
+
+  it("keeps single-pass output free of PASSINDEX", () => {
+    let g = createGraph();
+    g = addNode(g, "Noise", { scale: 1, seed: 0 });
+    g = addNode(g, "Output", {});
+    const [noise, output] = [...g.nodes.values()];
+    g = connect(g, noise.id, "out", output.id, "source");
+    const compiled = compileGraph(g);
+    expect(compiled.valid).toBe(true);
+    expect(compiled.source).not.toContain("PASSINDEX");
+  });
+
+  it("reports passes and buffer uniforms in describe", () => {
+    const meta = describeFragmentGraph(twoPassGraph());
+    expect(meta.passes).toBeDefined();
+    expect(meta.passes!.length).toBe(2);
+    const [p0, p1] = meta.passes!;
+    expect(p0.target).toBe("blurBuf");
+    expect(p0.output).toBe(false);
+    expect(p1.output).toBe(true);
+    expect(p1.index).toBe(1);
+    expect(meta.uniforms.some((u) => u.name === "PASSINDEX" && u.type === "int")).toBe(true);
+    expect(meta.uniforms.some((u) => u.name === "blurBuf" && u.semantic === "buffer")).toBe(true);
+  });
+
+  it("reports size equations in describe", () => {
+    let g = createGraph();
+    g = addNode(g, "Noise", { scale: 1, seed: 0 });
+    g = addNode(g, "PassTarget", { name: "buf", persistent: 0, float: 0, width: "$WIDTH/16.0", height: "$HEIGHT/16.0" });
+    g = addNode(g, "ReadBuffer", { name: "buf" });
+    g = addNode(g, "Output", {});
+    const [noise, target, read, output] = [...g.nodes.values()];
+    g = connect(g, noise.id, "out", target.id, "source");
+    g = connect(g, read.id, "out", output.id, "source");
+    const meta = describeFragmentGraph(g);
+    const pass = meta.passes!.find((p) => p.target === "buf")!;
+    expect(pass.width).toBe("$WIDTH/16.0");
+    expect(pass.height).toBe("$HEIGHT/16.0");
+  });
 });
 
 describe("validateGLSL", () => {

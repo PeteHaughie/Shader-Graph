@@ -27,7 +27,7 @@ npm run dev                    # start the MCP server over stdio
 | `connect` / `disconnect` | Wire or remove edges between nodes |
 | `set_parameter` | Tune a node's parameter value |
 | `set_target` | Set GLSL target version: es100, es300, or gl150 |
-| `validate` | Run 4-category validation on the graph |
+| `validate` | Run validation on the graph (type-checking, completeness, DAG, parameter ranges, pass/buffer rules) |
 | `compile` | Compile fragment graph → GLSL for current target |
 | `describe` | Fragment graph metadata (uniforms, varyings, output) |
 | `vtx_list_primitives` | List vertex primitive types |
@@ -42,13 +42,14 @@ npm run dev                    # start the MCP server over stdio
 | `describe_pair` | Combined metadata for both graphs |
 | `compile_depth_pass` | Depth-only shaders for shadow map rendering |
 
-## Primitive catalogue (37 nodes)
+## Primitive catalogue (41 nodes)
 
-### Fragment shader (25 nodes)
+### Fragment shader (29 nodes)
 
 | Category | Nodes |
 |----------|-------|
 | **Sources** | Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time**, **FromVertex** |
+| **Buffers** | **PassTarget**, **ReadBuffer** |
 | **Color** | BrightnessContrast, HueShift, Saturation, Invert, Threshold, **Palette** |
 | **Blend** | Mix, Add, Subtract, Multiply |
 | **Lighting** | **DiffuseLight**, **AmbientLight** |
@@ -68,7 +69,44 @@ npm run dev                    # start the MCP server over stdio
 
 Each primitive has typed input/output ports and validated parameter ranges. Float and int parameters can also accept wired connections from any node's vec4 output (using the `.r` channel) — so `Time` can drive `Mix.factor`, `Blur.radius`, or `Gradient.angle` for animated effects.
 
-The graph validates on four axes: type-checking, completeness, acyclicity, and parameter bounds.
+The graph validates on four axes: type-checking, completeness, acyclicity, and parameter bounds. Multi-pass graphs add a fifth: buffer/pass correctness (see below).
+
+## Multi-pass & persistent buffers
+
+The graph can render in multiple passes by rendering into **named buffers** that later passes (or later frames) read back. The vocabulary is borrowed from the ISF (Interactive Shader Format) spec:
+
+- **`PassTarget`** — a sink, like `Output`, but writes its `source` to a named buffer instead of the display. Params:
+  - `name` (string) — the buffer name, also its GLSL sampler identifier
+  - `persistent` (0/1) — keep the buffer across frames (for accumulation/trails/feedback)
+  - `float` (0/1) — allocate a 32-bit float buffer (for data, not just color)
+  - `width` / `height` (string) — pass size equations, e.g. `"$WIDTH/16.0"` for a low-res buffer; `$WIDTH`/`$HEIGHT` are the output size
+- **`ReadBuffer`** — a source that samples a named buffer (optional `uv` input, defaulting to normalized coordinates).
+
+The subgraph feeding each sink is one pass. Passes are ordered by buffer dependency (write before read), and the compiler emits a single shader with `if (PASSINDEX == 0) { … } else if (PASSINDEX == 1) { … }` branches; the `Output` pass runs last. The graph itself stays **acyclic** — feedback is expressed through buffers, not edges: a `ReadBuffer` inside the pass that writes it reads the buffer's *previous frame* content, which is the standard way to build motion-blur trails, accumulators, and iterative effects. Reading a buffer inside its own write-pass is only valid when the buffer is `persistent`.
+
+Example — a two-pass graph (render noise to `blurBuf`, then display it):
+
+```text
+Noise ──→ PassTarget("blurBuf")
+ReadBuffer("blurBuf") ──→ Output
+```
+
+compiles to:
+
+```glsl
+uniform vec2 iResolution;
+uniform int PASSINDEX;
+uniform sampler2D blurBuf;
+
+void main() {
+  if (PASSINDEX == 0) {  vec4 v0 = noise1d(1.0, 0.0);
+    gl_FragColor = v0;}
+  else if (PASSINDEX == 1) {  vec4 v0 = texture2D(blurBuf, gl_FragCoord.xy / iResolution);
+    gl_FragColor = v0;}
+}
+```
+
+`describe` reports each pass's `index`, `target`, `persistent`, `float`, `width`/`height`, and whether it is the final `output`, so a host knows which framebuffers to allocate and in what order to run them.
 
 ## Configure in opencode
 
@@ -108,9 +146,10 @@ src/
 ├── graph/
 │   ├── types.ts       Node, Edge, GraphState interfaces
 │   ├── primitives.ts  PortType enum, GraphType, port/param specs
-│   ├── registry.ts    37 primitive definitions (25 frag + 12 vert)
+│   ├── registry.ts    41 primitive definitions (29 frag + 12 vert)
+│   ├── passes.ts      Multi-pass analysis: partitioning, ordering, buffer metadata
 │   ├── operations.ts  Immutable graph mutations
-│   └── validation.ts  4-category graph validation
+│   └── validation.ts  4-category graph validation + pass/buffer rules
 ├── compiler/
 │   ├── compile.ts     Fragment graph → GLSL code generator
 │   └── vertex.ts      Vertex graph → GLSL code generator
@@ -137,7 +176,7 @@ Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons wi
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (71 tests)
+npm test            # vitest run (92 tests)
 
 ## GLSL targets
 
@@ -154,6 +193,7 @@ The graph structure, validation, and primitives are target-agnostic — only the
 
 ## Future directions
 
+- **ISF output target** — emit the ISF `.fs` format (JSON descriptor header + GLSL body). The graph already uses ISF's pass/buffer vocabulary, so compiled multi-pass shaders map almost directly; this would make graph output loadable in VDMX, Resolume, TouchDesigner, and other ISF hosts.
 - **Compute shaders** — the same semantic graph model extends naturally to compute pipelines. Instead of a vertex→fragment pipeline, compute shaders have a dispatch grid (workgroups → invocations). Audio DSP on the GPU is a compelling application: oscillator → filter → envelope → output maps directly to a dataflow graph, with float buffers flowing between typed nodes instead of vec4 pixels.
 - **More compiler targets** — HLSL (DirectX), WGSL (WebGPU), Metal, SPIR-V. The semantic graph is target-agnostic; each target is a new code generator.
 - **Application-level semantic graphs** — extending the metaphor beyond shaders to frameworks like openFrameworks, where the graph describes application architecture (event-driven state machines, callbacks, GPU interaction) rather than per-pixel computation.

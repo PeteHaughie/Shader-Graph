@@ -2,6 +2,7 @@ import { GraphState } from "./types.js";
 import { PortType } from "./primitives.js";
 import { getPrimitive } from "./registry.js";
 import { topologicalSort } from "./operations.js";
+import { analyzePasses } from "./passes.js";
 
 export interface ValidationError {
   nodeId?: string;
@@ -87,6 +88,7 @@ export function validateGraph(state: GraphState): ValidationResult {
     if (!def) continue;
     const paramInputNames = new Set(def.params.filter((p) => p.isInput).map((p) => p.name));
     for (const input of def.inputs) {
+      if (input.optional) continue;
       if (paramInputNames.has(input.name)) continue;
       const connected = [...state.edges.values()].some((e) => e.toNode === node.id && e.toPort === input.name);
       if (!connected) {
@@ -98,6 +100,11 @@ export function validateGraph(state: GraphState): ValidationResult {
   const { order, hasCycle } = topologicalSort(state);
   if (hasCycle || order.length !== state.nodes.size) {
     errors.push({ message: "Graph contains a cycle. Acyclic graphs only." });
+  }
+
+  const passAnalysis = analyzePasses(state);
+  for (const msg of passAnalysis.errors) {
+    errors.push({ message: msg });
   }
 
   return { valid: errors.length === 0, errors };

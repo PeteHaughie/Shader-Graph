@@ -269,6 +269,26 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     params: [],
   },
   {
+    graphType: GraphType.Fragment,
+    typeName: "PassTarget",
+    inputs: [{ name: "source", type: PortType.Vec4 }],
+    outputs: [],
+    params: [
+      { name: "name", type: "string", default: "" },
+      { name: "persistent", type: "int", default: 0, min: 0, max: 1 },
+      { name: "float", type: "int", default: 0, min: 0, max: 1 },
+      { name: "width", type: "string", default: "$WIDTH" },
+      { name: "height", type: "string", default: "$HEIGHT" },
+    ],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "ReadBuffer",
+    inputs: [{ name: "uv", type: PortType.Vec4, optional: true }],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "name", type: "string", default: "" }],
+  },
+  {
     graphType: GraphType.Vertex,
     typeName: "VertexPosition",
     inputs: [],

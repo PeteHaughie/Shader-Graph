@@ -160,7 +160,7 @@ server.registerTool(
 server.registerTool(
   "validate",
   {
-    description: "Validate the current graph (type-checking, completeness, DAG, parameter ranges)",
+    description: "Validate the current graph (type-checking, completeness, DAG, parameter ranges, pass/buffer rules)",
   },
   async () => {
     const result = validateGraph(graph);

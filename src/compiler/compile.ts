@@ -2,10 +2,11 @@ import { execFile } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { GraphState } from "../graph/types.js";
+import { GraphState, Node } from "../graph/types.js";
 import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
-import { topologicalSort } from "../graph/operations.js";
+import { topologicalSort, topologicalSortSubset } from "../graph/operations.js";
+import { analyzePasses } from "../graph/passes.js";
 import { getTarget, isValidTarget } from "./targets.js";
 import type { Target, TargetDef } from "./targets.js";
 
@@ -33,6 +34,16 @@ function wiredParam(inputVarMap: Map<string, string>, params: Record<string, unk
   const wired = inputVarMap.get(name);
   if (wired) return `${wired}.r`;
   return toGLSLFloat((params[name] as number) ?? def);
+}
+
+function buildInputVarMap(state: GraphState, nodeId: string, varNames: Map<string, string>): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const edge of state.edges.values()) {
+    if (edge.toNode === nodeId) {
+      map.set(edge.toPort, varNames.get(edge.fromNode)!);
+    }
+  }
+  return map;
 }
 
 function generateNoiseGLSL(): string {
@@ -152,8 +163,342 @@ export interface ShaderMetadata {
 }
 
 export interface ShaderPass {
+  index?: number;
   type: string;
-  description: string;
+  description?: string;
+  target?: string;
+  persistent?: boolean;
+  float?: boolean;
+  width?: string;
+  height?: string;
+  output?: boolean;
+  nodes?: string[];
+}
+
+interface EmitContext {
+  state: GraphState;
+  target: TargetDef;
+  textureIndexMap: Map<string, number>;
+  texCounter: { value: number };
+}
+
+function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, string>, ctx: EmitContext): string[] {
+  const lines: string[] = [];
+  const { state, target, textureIndexMap, texCounter } = ctx;
+
+  switch (node.typeName) {
+    case "Texture": {
+      const url = node.params.url as string;
+      const uvInput = inputVarMap.get("uv");
+      const defaultUV = "gl_FragCoord.xy / iResolution";
+      const uv = uvInput ? `${uvInput}.xy` : defaultUV;
+      if (url) {
+        const ti = textureIndexMap.get(node.id) ?? 0;
+        lines.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, ${uv});`);
+      } else {
+        lines.push(`  vec4 ${varName} = vec4(${uv}, 0.0, 1.0);`);
+      }
+      break;
+    }
+    case "ReadBuffer": {
+      const name = (node.params.name as string) ?? "";
+      const uvInput = inputVarMap.get("uv");
+      const uv = uvInput ? `${uvInput}.xy` : "gl_FragCoord.xy / iResolution";
+      lines.push(`  vec4 ${varName} = ${target.textureFunc}(${name}, ${uv});`);
+      break;
+    }
+    case "FragCoord": {
+      lines.push(`  vec4 ${varName} = vec4(gl_FragCoord.xy, 0.0, 1.0);`);
+      break;
+    }
+    case "Floor": {
+      const fInput = inputVarMap.get("value") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = floor(${fInput});`);
+      break;
+    }
+    case "Mod": {
+      const mInput = inputVarMap.get("value") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = mod(${mInput}, ${wiredParam(inputVarMap, node.params, "divisor", 2)});`);
+      break;
+    }
+    case "TexelSize": {
+      lines.push(`  vec4 ${varName} = vec4(1.0 / iResolution, 0.0, 0.0);`);
+      break;
+    }
+    case "Swizzle": {
+      const swInput = inputVarMap.get("input") ?? "vec4(0.0)";
+      const pattern = (node.params.pattern as string) ?? "xxxx";
+      const comps = pattern.split("").map((c) => {
+        const idx = "xyzw".indexOf(c);
+        return idx >= 0 ? `${swInput}.${c}` : "0.0";
+      });
+      lines.push(`  vec4 ${varName} = vec4(${comps.join(", ")});`);
+      break;
+    }
+    case "Noise": {
+      lines.push(`  vec4 ${varName} = noise1d(${wiredParam(inputVarMap, node.params, "scale", 1)}, ${wiredParam(inputVarMap, node.params, "seed", 0)});`);
+      break;
+    }
+    case "SmoothNoise": {
+      lines.push(`  vec4 ${varName} = vec4(smoothNoise(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}));`);
+      break;
+    }
+    case "FractalNoise": {
+      lines.push(`  vec4 ${varName} = vec4(fbm(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}, ${wiredParam(inputVarMap, node.params, "lacunarity", 2)}, ${wiredParam(inputVarMap, node.params, "gain", 0.5)}));`);
+      break;
+    }
+    case "Time": {
+      lines.push(`  vec4 ${varName} = vec4(iTime * ${wiredParam(inputVarMap, node.params, "speed", 1)});`);
+      break;
+    }
+    case "SmoothStep": {
+      const value = inputVarMap.get("value") ?? "vec4(0.0)";
+      const edge0 = inputVarMap.get("edge0") ?? "vec4(0.0)";
+      const edge1 = inputVarMap.get("edge1") ?? "vec4(1.0)";
+      lines.push(`  vec4 ${varName} = smoothstep(${edge0}, ${edge1}, ${value});`);
+      break;
+    }
+    case "Palette": {
+      const input = inputVarMap.get("value") ?? "vec4(0.0)";
+      const mode = (node.params.mode as string) ?? "fire";
+      const modeIndex = ["fire", "ice", "rainbow", "gold", "neon"].indexOf(mode);
+      lines.push(`  float pal_lum = luminance(${input}.rgb);`);
+      lines.push(`  vec4 ${varName} = vec4(palette(pal_lum, ${modeIndex}), 1.0);`);
+      break;
+    }
+    case "SolidColor": {
+      const r = (node.params.r as number) ?? 1;
+      const g = (node.params.g as number) ?? 1;
+      const b = (node.params.b as number) ?? 1;
+      const a = (node.params.a as number) ?? 1;
+      lines.push(`  vec4 ${varName} = vec4(${toGLSLFloat(r)}, ${toGLSLFloat(g)}, ${toGLSLFloat(b)}, ${toGLSLFloat(a)});`);
+      break;
+    }
+    case "Gradient": {
+      const a = inputVarMap.get("colorA") ?? "vec4(0.0)";
+      const b = inputVarMap.get("colorB") ?? "vec4(1.0)";
+      const angleWired = inputVarMap.get("angle");
+      if (angleWired) {
+        lines.push(`  float grad_a = ${angleWired}.r * 3.14159 / 180.0;`);
+        lines.push(`  vec2 grad_dir = vec2(cos(grad_a), sin(grad_a));`);
+      } else {
+        const angle = (node.params.angle as number) ?? 0;
+        const rad = (angle * Math.PI) / 180;
+        lines.push(`  vec2 grad_dir = vec2(${toGLSLFloat(Math.cos(rad))}, ${toGLSLFloat(Math.sin(rad))});`);
+      }
+      lines.push(`  float grad_t = dot(gl_FragCoord.xy, grad_dir) / dot(iResolution, abs(grad_dir));`);
+      lines.push(`  vec4 ${varName} = mix(${a}, ${b}, clamp(grad_t, 0.0, 1.0));`);
+      break;
+    }
+    case "Checkerboard": {
+      const a = inputVarMap.get("colorA") ?? "vec4(1.0)";
+      const b = inputVarMap.get("colorB") ?? "vec4(0.0)";
+      lines.push(`  vec2 cb = floor(${wiredParam(inputVarMap, node.params, "frequency", 4)} * gl_FragCoord.xy / iResolution);`);
+      lines.push(`  vec4 ${varName} = mod(cb.x + cb.y, 2.0) < 0.5 ? ${a} : ${b};`);
+      break;
+    }
+    case "Blur": {
+      const blurInput = inputVarMap.get("image") ?? "vec4(0.0)";
+      const blurSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === node.id && e.toPort === "image")!.fromNode) : null;
+      if (blurSrcNode?.typeName === "Texture") {
+        const ti = textureIndexMap.get(blurSrcNode.id) ?? 0;
+        lines.push(`  vec2 blur_step = vec2(${wiredParam(inputVarMap, node.params, "radius", 2)}) / iResolution;`);
+        lines.push(`  vec2 blur_uv = gl_FragCoord.xy / iResolution;`);
+        lines.push(`  vec4 ${varName} = vec4(0.0);`);
+        for (const dy of [-1, 0, 1]) {
+          for (const dx of [-1, 0, 1]) {
+            lines.push(`  ${varName} += ${target.textureFunc}(uTexture${ti}, blur_uv + vec2(${dx}.0, ${dy}.0) * blur_step);`);
+          }
+        }
+        lines.push(`  ${varName} /= 9.0;`);
+      } else {
+        lines.push(`  vec4 ${varName} = ${blurInput};`);
+      }
+      break;
+    }
+    case "Glow": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      lines.push(`  float bright = max(${input}.r, max(${input}.g, ${input}.b));`);
+      lines.push(`  vec4 ${varName} = ${input} * clamp(bright * ${wiredParam(inputVarMap, node.params, "intensity", 1)}, 0.0, 1.0);`);
+      break;
+    }
+    case "EdgeDetect": {
+      const edgeInput = inputVarMap.get("image") ?? "vec4(0.0)";
+      const edgeSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === node.id && e.toPort === "image")!.fromNode) : null;
+      if (edgeSrcNode?.typeName === "Texture") {
+        const ti = textureIndexMap.get(edgeSrcNode.id) ?? 0;
+        lines.push(`  vec2 step = vec2(1.0) / iResolution;`);
+        lines.push(`  vec2 uv = gl_FragCoord.xy / iResolution;`);
+        lines.push(`  vec4 ${varName} = sobel(uTexture${ti}, uv, step);`);
+      } else {
+        lines.push(`  vec4 ${varName} = ${edgeInput};`);
+      }
+      break;
+    }
+    case "Displace": {
+      const image = inputVarMap.get("image") ?? "vec4(0.0)";
+      const map = inputVarMap.get("map") ?? "vec4(0.0)";
+      const dispSrcNode = inputVarMap.has("image")
+        ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === node.id && e.toPort === "image")!.fromNode)
+        : null;
+      if (dispSrcNode?.typeName === "Texture") {
+        const ti = textureIndexMap.get(dispSrcNode.id) ?? 0;
+        lines.push(`  vec2 disp_uv = gl_FragCoord.xy / iResolution + (${map}.rg * ${wiredParam(inputVarMap, node.params, "amount", 0.05)});`);
+        lines.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, disp_uv);`);
+      } else {
+        lines.push(`  vec4 ${varName} = ${image};`);
+      }
+      break;
+    }
+    case "BrightnessContrast": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      const b = wiredParam(inputVarMap, node.params, "brightness", 0);
+      const c = wiredParam(inputVarMap, node.params, "contrast", 0);
+      lines.push(`  vec3 bc_c = ${input}.rgb + ${b};`);
+      lines.push(`  bc_c = (259.0 * (255.0 + 255.0 * ${c})) / (255.0 * (259.0 - 255.0 * ${c})) * (bc_c - 0.5) + 0.5;`);
+      lines.push(`  vec4 ${varName} = vec4(clamp(bc_c, 0.0, 1.0), ${input}.a);`);
+      break;
+    }
+    case "HueShift": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      lines.push(`  vec3 hs_hsv = rgb2hsv(${input}.rgb);`);
+      lines.push(`  hs_hsv.x = fract(hs_hsv.x + ${wiredParam(inputVarMap, node.params, "angle", 0)} / 360.0);`);
+      lines.push(`  vec4 ${varName} = vec4(hsv2rgb(hs_hsv), ${input}.a);`);
+      break;
+    }
+    case "Saturation": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      lines.push(`  vec3 sat_hsv = rgb2hsv(${input}.rgb);`);
+      lines.push(`  sat_hsv.y = clamp(sat_hsv.y * ${wiredParam(inputVarMap, node.params, "amount", 1)}, 0.0, 1.0);`);
+      lines.push(`  vec4 ${varName} = vec4(hsv2rgb(sat_hsv), ${input}.a);`);
+      break;
+    }
+    case "Invert": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = vec4(1.0 - ${input}.rgb, ${input}.a);`);
+      break;
+    }
+    case "Threshold": {
+      const input = inputVarMap.get("image") ?? "vec4(0.0)";
+      lines.push(`  float thresh_lum = luminance(${input}.rgb);`);
+      lines.push(`  vec4 ${varName} = vec4(vec3(step(${wiredParam(inputVarMap, node.params, "level", 0.5)}, thresh_lum)), ${input}.a);`);
+      break;
+    }
+    case "Mix": {
+      const a = inputVarMap.get("a") ?? "vec4(0.0)";
+      const b = inputVarMap.get("b") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = mix(${a}, ${b}, ${wiredParam(inputVarMap, node.params, "factor", 0.5)});`);
+      break;
+    }
+    case "Add": {
+      const a = inputVarMap.get("a") ?? "vec4(0.0)";
+      const b = inputVarMap.get("b") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = ${a} + ${b};`);
+      break;
+    }
+    case "Subtract": {
+      const a = inputVarMap.get("a") ?? "vec4(0.0)";
+      const b = inputVarMap.get("b") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = ${a} - ${b};`);
+      break;
+    }
+    case "Multiply": {
+      const a = inputVarMap.get("a") ?? "vec4(0.0)";
+      const b = inputVarMap.get("b") ?? "vec4(0.0)";
+      lines.push(`  vec4 ${varName} = ${a} * ${b};`);
+      break;
+    }
+    case "Mask": {
+      const image = inputVarMap.get("image") ?? "vec4(0.0)";
+      const mask = inputVarMap.get("mask") ?? "vec4(1.0)";
+      const invert = (node.params.invert as number) ?? 0;
+      if (invert) {
+        lines.push(`  vec4 ${varName} = vec4(${image}.rgb * (1.0 - ${mask}.a), ${image}.a);`);
+      } else {
+        lines.push(`  vec4 ${varName} = vec4(${image}.rgb * ${mask}.a, ${image}.a);`);
+      }
+      break;
+    }
+    case "FromVertex": {
+      const vName = (node.params.name as string) ?? "vData";
+      const sanitized = vName.replace(/[^a-zA-Z0-9_]/g, "_");
+      lines.push(`  vec4 ${varName} = ${sanitized};`);
+      break;
+    }
+    case "DiffuseLight": {
+      const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
+      const ld = (node.params.lightDir as string) ?? "0.5,1.0,0.5";
+      const col = (node.params.color as string) ?? "1.0,0.0,0.0";
+      lines.push(`  vec3 dl_n = normalize(${normal}.xyz);`);
+      lines.push(`  vec3 dl_l = normalize(vec3(${ld}));`);
+      lines.push(`  float dl_dot = max(dot(dl_n, dl_l), 0.0);`);
+      lines.push(`  vec4 ${varName} = vec4(vec3(${col}) * dl_dot, 1.0);`);
+      break;
+    }
+    case "AmbientLight": {
+      const col = (node.params.color as string) ?? "0.1,0.0,0.0";
+      lines.push(`  vec4 ${varName} = vec4(vec3(${col}), 1.0);`);
+      break;
+    }
+    case "NormalMap": {
+      const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
+      const position = inputVarMap.get("position") ?? "vec4(0.0)";
+      const url = (node.params.url as string) ?? "";
+      const intensity = (node.params.intensity as number) ?? 1;
+      const ti = textureIndexMap.size;
+      if (url) textureIndexMap.set(node.id, texCounter.value++);
+      const texName = url ? `uTexture${textureIndexMap.get(node.id) ?? ti}` : null;
+      if (texName) {
+        lines.push(`  vec3 nm_sampled = ${target.textureFunc}(${texName}, gl_FragCoord.xy / iResolution).xyz * 2.0 - 1.0;`);
+      } else {
+        lines.push(`  vec3 nm_sampled = vec3(0.0, 0.0, 1.0);`);
+      }
+      lines.push(`  nm_sampled *= ${toGLSLFloat(intensity)};`);
+      lines.push(`  vec3 nm_tangent = normalize(dFdx(${position}.xyz));`);
+      lines.push(`  vec3 nm_bitangent = normalize(cross(${normal}.xyz, nm_tangent));`);
+      lines.push(`  mat3 nm_tbn = mat3(nm_tangent, nm_bitangent, ${normal}.xyz);`);
+      lines.push(`  vec4 ${varName} = vec4(normalize(nm_tbn * nm_sampled), 0.0);`);
+      break;
+    }
+    case "SpecularLight": {
+      const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
+      const viewDir = inputVarMap.get("viewDir") ?? "vec4(0.0, 0.0, 1.0, 0.0)";
+      const lightDir = inputVarMap.get("lightDir") ?? "vec4(0.5, 1.0, 0.5, 0.0)";
+      const shininess = (node.params.shininess as number) ?? 32;
+      const col = (node.params.color as string) ?? "1.0,1.0,1.0";
+      lines.push(`  vec3 sl_n = normalize(${normal}.xyz);`);
+      lines.push(`  vec3 sl_l = normalize(${lightDir}.xyz);`);
+      lines.push(`  vec3 sl_v = normalize(${viewDir}.xyz);`);
+      lines.push(`  vec3 sl_h = normalize(sl_l + sl_v);`);
+      lines.push(`  float sl_spec = pow(max(dot(sl_n, sl_h), 0.0), ${toGLSLFloat(shininess)});`);
+      lines.push(`  vec4 ${varName} = vec4(vec3(${col}) * sl_spec, 1.0);`);
+      break;
+    }
+    case "ShadowMap": {
+      const position = inputVarMap.get("position") ?? "vec4(0.0)";
+      const bias = (node.params.bias as number) ?? 0.005;
+      lines.push(`  vec4 sm_light_pos = uLightMVP * ${position};`);
+      lines.push(`  vec3 sm_proj = sm_light_pos.xyz / sm_light_pos.w;`);
+      lines.push(`  sm_proj = sm_proj * 0.5 + 0.5;`);
+      lines.push(`  float sm_closest = ${target.textureFunc}(uShadowMap, sm_proj.xy).r;`);
+      lines.push(`  float sm_current = sm_proj.z - ${toGLSLFloat(bias)};`);
+      lines.push(`  float sm_shadow = sm_current > sm_closest ? 0.0 : 1.0;`);
+      lines.push(`  vec4 ${varName} = vec4(vec3(sm_shadow), 1.0);`);
+      break;
+    }
+    case "PassTarget": {
+      const input = inputVarMap.get("source") ?? "vec4(0.0)";
+      lines.push(`  ${target.fragOutputName} = ${input};`);
+      break;
+    }
+    case "Output": {
+      const input = inputVarMap.get("source") ?? "vec4(0.0)";
+      lines.push(`  ${target.fragOutputName} = ${input};`);
+      break;
+    }
+  }
+
+  return lines;
 }
 
 export function describeFragmentGraph(state: GraphState, externalVaryings?: VaryingInfo[]): ShaderMetadata & { passes?: ShaderPass[] } {
@@ -182,6 +527,28 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
     uniforms.push({ name: "uLightMVP", type: "mat4", semantic: "lightModelViewProjection" });
     passes.push({ type: "depth", description: "Render scene from light POV to depth texture, bind to uShadowMap" });
   }
+  const analysis = analyzePasses(state);
+  const hasMultiPass = analysis.passes.some((p) => p.sinkType === "PassTarget");
+  if (hasMultiPass) {
+    uniforms.push({ name: "PASSINDEX", type: "int", semantic: "passIndex" });
+    for (const pass of analysis.passes) {
+      if (!pass.target) continue;
+      uniforms.push({ name: pass.target, type: "sampler2D", semantic: "buffer" });
+    }
+    for (const pass of analysis.passes) {
+      passes.push({
+        index: pass.index,
+        type: "fragment",
+        target: pass.target,
+        persistent: pass.persistent,
+        float: pass.float,
+        width: pass.width,
+        height: pass.height,
+        output: pass.sinkType === "Output",
+        nodes: pass.nodes,
+      });
+    }
+  }
   const result: any = { uniforms, varyings: externalVaryings ?? [], output: "fragment" };
   if (passes.length > 0) result.passes = passes;
   return result;
@@ -198,328 +565,24 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
     };
   }
 
-  const { order } = topologicalSort(state);
-  const nodeCode: string[] = [];
-  const varNames = new Map<string, string>();
-
-  const textureIndexMap = new Map<string, number>();
-  let texCounter = 0;
-  for (const node of state.nodes.values()) {
-    if (node.typeName === "Texture" && !!(node.params.url as string)) {
-      textureIndexMap.set(node.id, texCounter++);
-    }
+  const analysis = analyzePasses(state);
+  if (analysis.errors.length > 0) {
+    return {
+      source: "",
+      valid: false,
+      errors: `Pass analysis failed:\n${analysis.errors.map((e) => `  - ${e}`).join("\n")}`,
+    };
   }
 
-  let varIndex = 0;
-  for (const nodeId of order) {
-    const node = state.nodes.get(nodeId)!;
-    const varName = `v${varIndex++}`;
-    varNames.set(nodeId, varName);
-
-    const inputEdges = [...state.edges.values()].filter((e) => e.toNode === nodeId);
-    const inputVarMap = new Map<string, string>();
-    for (const edge of inputEdges) {
-      inputVarMap.set(edge.toPort, varNames.get(edge.fromNode)!);
-    }
-
-    switch (node.typeName) {
-      case "Texture": {
-        const url = node.params.url as string;
-        const uvInput = inputVarMap.get("uv");
-        const defaultUV = "gl_FragCoord.xy / iResolution";
-        const uv = uvInput ? `${uvInput}.xy` : defaultUV;
-        if (url) {
-          const ti = textureIndexMap.get(node.id) ?? 0;
-          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, ${uv});`);
-        } else {
-          nodeCode.push(`  vec4 ${varName} = vec4(${uv}, 0.0, 1.0);`);
-        }
-        break;
-      }
-      case "FragCoord": {
-        nodeCode.push(`  vec4 ${varName} = vec4(gl_FragCoord.xy, 0.0, 1.0);`);
-        break;
-      }
-      case "Floor": {
-        const fInput = inputVarMap.get("value") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = floor(${fInput});`);
-        break;
-      }
-      case "Mod": {
-        const mInput = inputVarMap.get("value") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = mod(${mInput}, ${wiredParam(inputVarMap, node.params, "divisor", 2)});`);
-        break;
-      }
-      case "TexelSize": {
-        nodeCode.push(`  vec4 ${varName} = vec4(1.0 / iResolution, 0.0, 0.0);`);
-        break;
-      }
-      case "Swizzle": {
-        const swInput = inputVarMap.get("input") ?? "vec4(0.0)";
-        const pattern = (node.params.pattern as string) ?? "xxxx";
-        const comps = pattern.split("").map((c) => {
-          const idx = "xyzw".indexOf(c);
-          return idx >= 0 ? `${swInput}.${c}` : "0.0";
-        });
-        nodeCode.push(`  vec4 ${varName} = vec4(${comps.join(", ")});`);
-        break;
-      }
-      case "Noise": {
-        nodeCode.push(`  vec4 ${varName} = noise1d(${wiredParam(inputVarMap, node.params, "scale", 1)}, ${wiredParam(inputVarMap, node.params, "seed", 0)});`);
-        break;
-      }
-      case "SmoothNoise": {
-        nodeCode.push(`  vec4 ${varName} = vec4(smoothNoise(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}));`);
-        break;
-      }
-      case "FractalNoise": {
-        nodeCode.push(`  vec4 ${varName} = vec4(fbm(gl_FragCoord.xy * ${wiredParam(inputVarMap, node.params, "scale", 1)} + ${wiredParam(inputVarMap, node.params, "seed", 0)}, ${wiredParam(inputVarMap, node.params, "lacunarity", 2)}, ${wiredParam(inputVarMap, node.params, "gain", 0.5)}));`);
-        break;
-      }
-      case "Time": {
-        nodeCode.push(`  vec4 ${varName} = vec4(iTime * ${wiredParam(inputVarMap, node.params, "speed", 1)});`);
-        break;
-      }
-      case "SmoothStep": {
-        const value = inputVarMap.get("value") ?? "vec4(0.0)";
-        const edge0 = inputVarMap.get("edge0") ?? "vec4(0.0)";
-        const edge1 = inputVarMap.get("edge1") ?? "vec4(1.0)";
-        nodeCode.push(`  vec4 ${varName} = smoothstep(${edge0}, ${edge1}, ${value});`);
-        break;
-      }
-      case "Palette": {
-        const input = inputVarMap.get("value") ?? "vec4(0.0)";
-        const mode = (node.params.mode as string) ?? "fire";
-        const modeIndex = ["fire", "ice", "rainbow", "gold", "neon"].indexOf(mode);
-        nodeCode.push(`  float pal_lum = luminance(${input}.rgb);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(palette(pal_lum, ${modeIndex}), 1.0);`);
-        break;
-      }
-      case "SolidColor": {
-        const r = (node.params.r as number) ?? 1;
-        const g = (node.params.g as number) ?? 1;
-        const b = (node.params.b as number) ?? 1;
-        const a = (node.params.a as number) ?? 1;
-        nodeCode.push(`  vec4 ${varName} = vec4(${toGLSLFloat(r)}, ${toGLSLFloat(g)}, ${toGLSLFloat(b)}, ${toGLSLFloat(a)});`);
-        break;
-      }
-      case "Gradient": {
-        const a = inputVarMap.get("colorA") ?? "vec4(0.0)";
-        const b = inputVarMap.get("colorB") ?? "vec4(1.0)";
-        const angleWired = inputVarMap.get("angle");
-        if (angleWired) {
-          nodeCode.push(`  float grad_a = ${angleWired}.r * 3.14159 / 180.0;`);
-          nodeCode.push(`  vec2 grad_dir = vec2(cos(grad_a), sin(grad_a));`);
-        } else {
-          const angle = (node.params.angle as number) ?? 0;
-          const rad = (angle * Math.PI) / 180;
-          nodeCode.push(`  vec2 grad_dir = vec2(${toGLSLFloat(Math.cos(rad))}, ${toGLSLFloat(Math.sin(rad))});`);
-        }
-        nodeCode.push(`  float grad_t = dot(gl_FragCoord.xy, grad_dir) / dot(iResolution, abs(grad_dir));`);
-        nodeCode.push(`  vec4 ${varName} = mix(${a}, ${b}, clamp(grad_t, 0.0, 1.0));`);
-        break;
-      }
-      case "Checkerboard": {
-        const a = inputVarMap.get("colorA") ?? "vec4(1.0)";
-        const b = inputVarMap.get("colorB") ?? "vec4(0.0)";
-        nodeCode.push(`  vec2 cb = floor(${wiredParam(inputVarMap, node.params, "frequency", 4)} * gl_FragCoord.xy / iResolution);`);
-        nodeCode.push(`  vec4 ${varName} = mod(cb.x + cb.y, 2.0) < 0.5 ? ${a} : ${b};`);
-        break;
-      }
-      case "Blur": {
-        const blurInput = inputVarMap.get("image") ?? "vec4(0.0)";
-        const blurSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode) : null;
-        if (blurSrcNode?.typeName === "Texture") {
-          const ti = textureIndexMap.get(blurSrcNode.id) ?? 0;
-          nodeCode.push(`  vec2 blur_step = vec2(${wiredParam(inputVarMap, node.params, "radius", 2)}) / iResolution;`);
-          nodeCode.push(`  vec2 blur_uv = gl_FragCoord.xy / iResolution;`);
-          nodeCode.push(`  vec4 ${varName} = vec4(0.0);`);
-          for (const dy of [-1, 0, 1]) {
-            for (const dx of [-1, 0, 1]) {
-              nodeCode.push(`  ${varName} += ${target.textureFunc}(uTexture${ti}, blur_uv + vec2(${dx}.0, ${dy}.0) * blur_step);`);
-            }
-          }
-          nodeCode.push(`  ${varName} /= 9.0;`);
-        } else {
-          nodeCode.push(`  vec4 ${varName} = ${blurInput};`);
-        }
-        break;
-      }
-      case "Glow": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  float bright = max(${input}.r, max(${input}.g, ${input}.b));`);
-        nodeCode.push(`  vec4 ${varName} = ${input} * clamp(bright * ${wiredParam(inputVarMap, node.params, "intensity", 1)}, 0.0, 1.0);`);
-        break;
-      }
-      case "EdgeDetect": {
-        const edgeInput = inputVarMap.get("image") ?? "vec4(0.0)";
-        const edgeSrcNode = inputVarMap.has("image") ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode) : null;
-        if (edgeSrcNode?.typeName === "Texture") {
-          const ti = textureIndexMap.get(edgeSrcNode.id) ?? 0;
-          nodeCode.push(`  vec2 step = vec2(1.0) / iResolution;`);
-          nodeCode.push(`  vec2 uv = gl_FragCoord.xy / iResolution;`);
-          nodeCode.push(`  vec4 ${varName} = sobel(uTexture${ti}, uv, step);`);
-        } else {
-          nodeCode.push(`  vec4 ${varName} = ${edgeInput};`);
-        }
-        break;
-      }
-      case "Displace": {
-        const image = inputVarMap.get("image") ?? "vec4(0.0)";
-        const map = inputVarMap.get("map") ?? "vec4(0.0)";
-        const dispSrcNode = inputVarMap.has("image")
-          ? state.nodes.get([...state.edges.values()].find((e) => e.toNode === nodeId && e.toPort === "image")!.fromNode)
-          : null;
-        if (dispSrcNode?.typeName === "Texture") {
-          const ti = textureIndexMap.get(dispSrcNode.id) ?? 0;
-          nodeCode.push(`  vec2 disp_uv = gl_FragCoord.xy / iResolution + (${map}.rg * ${wiredParam(inputVarMap, node.params, "amount", 0.05)});`);
-          nodeCode.push(`  vec4 ${varName} = ${target.textureFunc}(uTexture${ti}, disp_uv);`);
-        } else {
-          nodeCode.push(`  vec4 ${varName} = ${image};`);
-        }
-        break;
-      }
-      case "BrightnessContrast": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        const b = wiredParam(inputVarMap, node.params, "brightness", 0);
-        const c = wiredParam(inputVarMap, node.params, "contrast", 0);
-        nodeCode.push(`  vec3 bc_c = ${input}.rgb + ${b};`);
-        nodeCode.push(`  bc_c = (259.0 * (255.0 + 255.0 * ${c})) / (255.0 * (259.0 - 255.0 * ${c})) * (bc_c - 0.5) + 0.5;`);
-        nodeCode.push(`  vec4 ${varName} = vec4(clamp(bc_c, 0.0, 1.0), ${input}.a);`);
-        break;
-      }
-      case "HueShift": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  vec3 hs_hsv = rgb2hsv(${input}.rgb);`);
-        nodeCode.push(`  hs_hsv.x = fract(hs_hsv.x + ${wiredParam(inputVarMap, node.params, "angle", 0)} / 360.0);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(hsv2rgb(hs_hsv), ${input}.a);`);
-        break;
-      }
-      case "Saturation": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  vec3 sat_hsv = rgb2hsv(${input}.rgb);`);
-        nodeCode.push(`  sat_hsv.y = clamp(sat_hsv.y * ${wiredParam(inputVarMap, node.params, "amount", 1)}, 0.0, 1.0);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(hsv2rgb(sat_hsv), ${input}.a);`);
-        break;
-      }
-      case "Invert": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = vec4(1.0 - ${input}.rgb, ${input}.a);`);
-        break;
-      }
-      case "Threshold": {
-        const input = inputVarMap.get("image") ?? "vec4(0.0)";
-        nodeCode.push(`  float thresh_lum = luminance(${input}.rgb);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(step(${wiredParam(inputVarMap, node.params, "level", 0.5)}, thresh_lum)), ${input}.a);`);
-        break;
-      }
-      case "Mix": {
-        const a = inputVarMap.get("a") ?? "vec4(0.0)";
-        const b = inputVarMap.get("b") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = mix(${a}, ${b}, ${wiredParam(inputVarMap, node.params, "factor", 0.5)});`);
-        break;
-      }
-      case "Add": {
-        const a = inputVarMap.get("a") ?? "vec4(0.0)";
-        const b = inputVarMap.get("b") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = ${a} + ${b};`);
-        break;
-      }
-      case "Subtract": {
-        const a = inputVarMap.get("a") ?? "vec4(0.0)";
-        const b = inputVarMap.get("b") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = ${a} - ${b};`);
-        break;
-      }
-      case "Multiply": {
-        const a = inputVarMap.get("a") ?? "vec4(0.0)";
-        const b = inputVarMap.get("b") ?? "vec4(0.0)";
-        nodeCode.push(`  vec4 ${varName} = ${a} * ${b};`);
-        break;
-      }
-      case "Mask": {
-        const image = inputVarMap.get("image") ?? "vec4(0.0)";
-        const mask = inputVarMap.get("mask") ?? "vec4(1.0)";
-        const invert = (node.params.invert as number) ?? 0;
-        if (invert) {
-          nodeCode.push(`  vec4 ${varName} = vec4(${image}.rgb * (1.0 - ${mask}.a), ${image}.a);`);
-        } else {
-          nodeCode.push(`  vec4 ${varName} = vec4(${image}.rgb * ${mask}.a, ${image}.a);`);
-        }
-        break;
-      }
-      case "FromVertex": {
-        const vName = (node.params.name as string) ?? "vData";
-        const sanitized = vName.replace(/[^a-zA-Z0-9_]/g, "_");
-        nodeCode.push(`  vec4 ${varName} = ${sanitized};`);
-        break;
-      }
-      case "DiffuseLight": {
-        const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
-        const ld = (node.params.lightDir as string) ?? "0.5,1.0,0.5";
-        const col = (node.params.color as string) ?? "1.0,0.0,0.0";
-        nodeCode.push(`  vec3 dl_n = normalize(${normal}.xyz);`);
-        nodeCode.push(`  vec3 dl_l = normalize(vec3(${ld}));`);
-        nodeCode.push(`  float dl_dot = max(dot(dl_n, dl_l), 0.0);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}) * dl_dot, 1.0);`);
-        break;
-      }
-      case "AmbientLight": {
-        const col = (node.params.color as string) ?? "0.1,0.0,0.0";
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}), 1.0);`);
-        break;
-      }
-      case "NormalMap": {
-        const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
-        const position = inputVarMap.get("position") ?? "vec4(0.0)";
-        const url = (node.params.url as string) ?? "";
-        const intensity = (node.params.intensity as number) ?? 1;
-        const ti = textureIndexMap.size;
-        if (url) textureIndexMap.set(node.id, texCounter++);
-        const texName = url ? `uTexture${textureIndexMap.get(node.id) ?? ti}` : null;
-        if (texName) {
-          nodeCode.push(`  vec3 nm_sampled = ${target.textureFunc}(${texName}, gl_FragCoord.xy / iResolution).xyz * 2.0 - 1.0;`);
-        } else {
-          nodeCode.push(`  vec3 nm_sampled = vec3(0.0, 0.0, 1.0);`);
-        }
-        nodeCode.push(`  nm_sampled *= ${toGLSLFloat(intensity)};`);
-        nodeCode.push(`  vec3 nm_tangent = normalize(dFdx(${position}.xyz));`);
-        nodeCode.push(`  vec3 nm_bitangent = normalize(cross(${normal}.xyz, nm_tangent));`);
-        nodeCode.push(`  mat3 nm_tbn = mat3(nm_tangent, nm_bitangent, ${normal}.xyz);`);
-        nodeCode.push(`  vec4 ${varName} = vec4(normalize(nm_tbn * nm_sampled), 0.0);`);
-        break;
-      }
-      case "SpecularLight": {
-        const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
-        const viewDir = inputVarMap.get("viewDir") ?? "vec4(0.0, 0.0, 1.0, 0.0)";
-        const lightDir = inputVarMap.get("lightDir") ?? "vec4(0.5, 1.0, 0.5, 0.0)";
-        const shininess = (node.params.shininess as number) ?? 32;
-        const col = (node.params.color as string) ?? "1.0,1.0,1.0";
-        nodeCode.push(`  vec3 sl_n = normalize(${normal}.xyz);`);
-        nodeCode.push(`  vec3 sl_l = normalize(${lightDir}.xyz);`);
-        nodeCode.push(`  vec3 sl_v = normalize(${viewDir}.xyz);`);
-        nodeCode.push(`  vec3 sl_h = normalize(sl_l + sl_v);`);
-        nodeCode.push(`  float sl_spec = pow(max(dot(sl_n, sl_h), 0.0), ${toGLSLFloat(shininess)});`);
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(${col}) * sl_spec, 1.0);`);
-        break;
-      }
-      case "ShadowMap": {
-        const position = inputVarMap.get("position") ?? "vec4(0.0)";
-        const bias = (node.params.bias as number) ?? 0.005;
-        nodeCode.push(`  vec4 sm_light_pos = uLightMVP * ${position};`);
-        nodeCode.push(`  vec3 sm_proj = sm_light_pos.xyz / sm_light_pos.w;`);
-        nodeCode.push(`  sm_proj = sm_proj * 0.5 + 0.5;`);
-        nodeCode.push(`  float sm_closest = ${target.textureFunc}(uShadowMap, sm_proj.xy).r;`);
-        nodeCode.push(`  float sm_current = sm_proj.z - ${toGLSLFloat(bias)};`);
-        nodeCode.push(`  float sm_shadow = sm_current > sm_closest ? 0.0 : 1.0;`);
-        nodeCode.push(`  vec4 ${varName} = vec4(vec3(sm_shadow), 1.0);`);
-        break;
-      }
-      case "Output": {
-        const input = inputVarMap.get("source") ?? "vec4(0.0)";
-        nodeCode.push(`  ${target.fragOutputName} = ${input};`);
-        break;
-      }
+  const ctx: EmitContext = {
+    state,
+    target,
+    textureIndexMap: new Map<string, number>(),
+    texCounter: { value: 0 },
+  };
+  for (const node of state.nodes.values()) {
+    if (node.typeName === "Texture" && !!(node.params.url as string)) {
+      ctx.textureIndexMap.set(node.id, ctx.texCounter.value++);
     }
   }
 
@@ -559,6 +622,13 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
     parts.push(`uniform float iTime;\n`);
   }
   parts.push(GLSL_UNIFORMS);
+  const isMultiPass = analysis.passes.length > 1;
+  if (isMultiPass) {
+    parts.push(`uniform int PASSINDEX;\n`);
+    for (const pass of analysis.passes) {
+      if (pass.target) parts.push(`uniform sampler2D ${pass.target};\n`);
+    }
+  }
   const varyings = externalVaryings ?? [];
   for (const v of varyings) {
     parts.push(`${target.varyingIn} ${v.type} ${v.name};\n`);
@@ -578,8 +648,39 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   if (typeNames.includes("Palette")) {
     parts.push(generatePaletteGLSL());
   }
+
   parts.push("void main() {\n");
-  parts.push(nodeCode.join("\n"));
+  if (isMultiPass) {
+    analysis.passes.forEach((pass, i) => {
+      const { order } = topologicalSortSubset(state, new Set(pass.nodes));
+      parts.push(i === 0 ? `if (PASSINDEX == ${pass.index}) {` : `else if (PASSINDEX == ${pass.index}) {`);
+      const passNodeCode: string[] = [];
+      const varNames = new Map<string, string>();
+      let varIndex = 0;
+      for (const nodeId of order) {
+        const node = state.nodes.get(nodeId)!;
+        const varName = `v${varIndex++}`;
+        varNames.set(nodeId, varName);
+        const inputVarMap = buildInputVarMap(state, nodeId, varNames);
+        passNodeCode.push(...emitNodeLines(node, varName, inputVarMap, ctx));
+      }
+      parts.push(passNodeCode.join("\n"));
+      parts.push("}\n");
+    });
+  } else {
+    const { order } = topologicalSort(state);
+    const nodeCode: string[] = [];
+    const varNames = new Map<string, string>();
+    let varIndex = 0;
+    for (const nodeId of order) {
+      const node = state.nodes.get(nodeId)!;
+      const varName = `v${varIndex++}`;
+      varNames.set(nodeId, varName);
+      const inputVarMap = buildInputVarMap(state, nodeId, varNames);
+      nodeCode.push(...emitNodeLines(node, varName, inputVarMap, ctx));
+    }
+    parts.push(nodeCode.join("\n"));
+  }
   parts.push("}\n");
 
   const metadata = describeFragmentGraph(state, externalVaryings);
