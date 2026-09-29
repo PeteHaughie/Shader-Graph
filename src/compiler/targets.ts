@@ -1,4 +1,7 @@
-export type Target = "es100" | "es300" | "gl150";
+export type GLSLTarget = "es100" | "es300" | "gl150";
+export type MetalTarget = "metal";
+export type Target = GLSLTarget | MetalTarget;
+export type Language = "glsl" | "msl";
 
 export interface TargetDef {
   version: string;
@@ -12,7 +15,7 @@ export interface TargetDef {
   derivativesExt: string;
 }
 
-const TARGETS: Record<Target, TargetDef> = {
+const TARGETS: Record<GLSLTarget, TargetDef> = {
   es100: {
     version: "#version 100",
     precision: "precision highp float;\n",
@@ -48,10 +51,32 @@ const TARGETS: Record<Target, TargetDef> = {
   },
 };
 
+export const METAL_TARGETS: MetalTarget[] = ["metal"];
+export const METAL_STD = "metal3.0";
+
 export function getTarget(target: Target): TargetDef {
+  if (target === "metal") {
+    throw new Error("metal has no GLSL TargetDef; use the MSL backend");
+  }
   return TARGETS[target];
 }
 
+export function isGLSLTarget(t: string): t is GLSLTarget {
+  return t === "es100" || t === "es300" || t === "gl150";
+}
+
+export function isMetalTarget(t: string): t is MetalTarget {
+  return t === "metal";
+}
+
 export function isValidTarget(t: string): t is Target {
-  return t in TARGETS;
+  return isGLSLTarget(t) || isMetalTarget(t);
+}
+
+export function languageOf(t: Target): Language {
+  return t === "metal" ? "msl" : "glsl";
+}
+
+export function targetList(): string[] {
+  return [...Object.keys(TARGETS), ...METAL_TARGETS];
 }

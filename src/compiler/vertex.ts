@@ -6,7 +6,7 @@ import { GraphState } from "../graph/types.js";
 import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
 import { topologicalSort } from "../graph/operations.js";
-import { getTarget, isValidTarget } from "./targets.js";
+import { getTarget, isGLSLTarget } from "./targets.js";
 import type { TargetDef } from "./targets.js";
 
 interface CompiledShader {
@@ -92,7 +92,7 @@ export function describeVertexGraph(state: GraphState): ShaderMetadata {
 }
 
 export function compileVertexGraph(state: GraphState, externalVaryings?: VaryingInfo[], targetName: string = "es100"): CompiledShader & { varyings?: VaryingInfo[] } {
-  const target = getTarget(isValidTarget(targetName) ? targetName : "es100");
+  const target = getTarget(isGLSLTarget(targetName) ? targetName : "es100");
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {

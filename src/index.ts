@@ -3,9 +3,9 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { listPrimitives } from "./graph/registry.js";
 import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
 import { validateGraph } from "./graph/validation.js";
-import { compileGraph, validateGLSL, describeFragmentGraph, VaryingInfo as FragVarying } from "./compiler/compile.js";
-import { compileVertexGraph, validateGLSL as validateGLSLVert, describeVertexGraph } from "./compiler/vertex.js";
-import { isValidTarget } from "./compiler/targets.js";
+import { getBackend } from "./compiler/backend.js";
+import { isValidTarget, targetList } from "./compiler/targets.js";
+import type { Target } from "./compiler/targets.js";
 import { z } from "zod";
 
 const server = new McpServer({
@@ -15,19 +15,19 @@ const server = new McpServer({
 
 let graph = createGraph();
 let vtxGraph = createGraph();
-let currentTarget = "es100";
+let currentTarget: Target = "es100";
 
 server.registerTool(
   "set_target",
   {
-    description: "Set the GLSL target version (es100, es300, gl150)",
+    description: `Set the shader target (${targetList().join(", ")})`,
     inputSchema: z.object({
-      target: z.string().describe("Target version: es100, es300, or gl150"),
+      target: z.string().describe(`Target: ${targetList().join(", ")}`),
     }),
   },
   async ({ target }) => {
     if (!isValidTarget(target)) {
-      return { content: [{ type: "text", text: `Invalid target "${target}". Use es100, es300, or gl150.` }], isError: true };
+      return { content: [{ type: "text", text: `Invalid target "${target}". Use ${targetList().join(", ")}.` }], isError: true };
     }
     currentTarget = target;
     return { content: [{ type: "text", text: `Target set to ${target}` }] };
@@ -173,18 +173,19 @@ server.registerTool(
 server.registerTool(
   "compile",
   {
-    description: "Compile the current graph to GLSL and validate the output",
+    description: "Compile the current graph to the target language and validate the output",
   },
   async () => {
-    const compiled = compileGraph(graph, undefined, currentTarget);
+    const backend = getBackend(currentTarget);
+    const compiled = backend.compileFragment(graph, undefined, currentTarget);
     if (!compiled.valid) {
       return {
         content: [{ type: "text", text: compiled.errors ?? "Unknown compilation error" }],
         isError: true,
       };
     }
-    const validation = await validateGLSL(compiled.source);
-    const response = `// Target: ${currentTarget}\n// GLSL compilation result:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
+    const validation = await backend.validate(compiled.source, "frag");
+    const response = `// Target: ${currentTarget}\n// Compilation result:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
     return { content: [{ type: "text", text: response }] };
   },
 );
@@ -195,17 +196,18 @@ server.registerTool(
     description: "Compile both vertex and fragment graphs as a matched shader pair with varying passthrough",
   },
   async () => {
-    const vtxResult = compileVertexGraph(vtxGraph, undefined, currentTarget);
+    const backend = getBackend(currentTarget);
+    const vtxResult = backend.compileVertex(vtxGraph, undefined, currentTarget);
     if (!vtxResult.valid) {
       return { content: [{ type: "text", text: `Vertex graph: ${vtxResult.errors}` }], isError: true };
     }
-    const fragResult = compileGraph(graph, vtxResult.varyings, currentTarget);
+    const fragResult = backend.compileFragment(graph, vtxResult.varyings, currentTarget);
     if (!fragResult.valid) {
       return { content: [{ type: "text", text: `Fragment graph: ${fragResult.errors}` }], isError: true };
     }
-    const vtxVal = await validateGLSLVert(vtxResult.source);
-    const fragVal = await validateGLSL(fragResult.source);
-    const response = `=== Vertex Shader ===\n// Valid: ${vtxVal.valid}\n${vtxResult.source}\n\n=== Fragment Shader ===\n// Valid: ${fragVal.valid}\n${fragResult.source}`;
+    const vtxVal = await backend.validate(vtxResult.source, "vert");
+    const fragVal = await backend.validate(fragResult.source, "frag");
+    const response = `// Target: ${currentTarget}\n=== Vertex Shader ===\n// Valid: ${vtxVal.valid}\n${vtxResult.source}\n\n=== Fragment Shader ===\n// Valid: ${fragVal.valid}\n${fragResult.source}`;
     return { content: [{ type: "text", text: response }] };
   },
 );
@@ -216,7 +218,8 @@ server.registerTool(
     description: "Describe the current fragment graph — returns uniform/attribute/varying metadata",
   },
   async () => {
-    const meta = describeFragmentGraph(graph);
+    const backend = getBackend(currentTarget);
+    const meta = backend.describeFragment(graph);
     return { content: [{ type: "text", text: JSON.stringify({ target: currentTarget, ...meta }, null, 2) }] };
   },
 );
@@ -227,7 +230,8 @@ server.registerTool(
     description: "Describe the current vertex graph — returns uniform/attribute/varying metadata",
   },
   async () => {
-    const meta = describeVertexGraph(vtxGraph);
+    const backend = getBackend(currentTarget);
+    const meta = backend.describeVertex(vtxGraph);
     return { content: [{ type: "text", text: JSON.stringify({ target: currentTarget, ...meta }, null, 2) }] };
   },
 );
@@ -238,8 +242,9 @@ server.registerTool(
     description: "Describe both graphs as a matched pair — returns combined metadata",
   },
   async () => {
-    const vtxMeta = describeVertexGraph(vtxGraph);
-    const fragMeta = describeFragmentGraph(graph, vtxMeta.varyings);
+    const backend = getBackend(currentTarget);
+    const vtxMeta = backend.describeVertex(vtxGraph);
+    const fragMeta = backend.describeFragment(graph, vtxMeta.varyings);
     return { content: [{ type: "text", text: JSON.stringify({ target: currentTarget, vertex: vtxMeta, fragment: fragMeta }, null, 2) }] };
   },
 );
@@ -250,16 +255,11 @@ server.registerTool(
     description: "Compile a depth-only vertex shader for shadow map rendering",
   },
   async () => {
-    const vtxResult = compileVertexGraph(vtxGraph, undefined, currentTarget);
-    if (!vtxResult.valid) return { content: [{ type: "text", text: `Vertex graph: ${vtxResult.errors}` }], isError: true };
-    const { isValidTarget, getTarget } = await import("./compiler/targets.js");
-    const tgt = getTarget(isValidTarget(currentTarget) ? currentTarget : "es100");
-    const attrKw = tgt.attribKeyword;
-    const vertSrc = `${tgt.version}\n${tgt.precision}${attrKw} vec3 aPosition;\nuniform mat4 uLightMVP;\nvoid main() {\n  gl_Position = uLightMVP * vec4(aPosition, 1.0);\n}`;
-    const fragSrc = `${tgt.version}\n${tgt.precision}void main() {\n  gl_FragColor = vec4(1.0);\n}`;
-    const vtxVal = await validateGLSLVert(vertSrc);
-    const fragVal = await validateGLSL(fragSrc);
-    const response = `=== Depth Vertex ===\n// Valid: ${vtxVal.valid}\n${vertSrc}\n\n=== Depth Fragment ===\n// Valid: ${fragVal.valid}\n${fragSrc}`;
+    const backend = getBackend(currentTarget);
+    const { vertex: vertSrc, fragment: fragSrc } = backend.depthPass(currentTarget);
+    const vtxVal = await backend.validate(vertSrc, "vert");
+    const fragVal = await backend.validate(fragSrc, "frag");
+    const response = `// Target: ${currentTarget}\n=== Depth Vertex ===\n// Valid: ${vtxVal.valid}\n${vertSrc}\n\n=== Depth Fragment ===\n// Valid: ${fragVal.valid}\n${fragSrc}`;
     return { content: [{ type: "text", text: response }] };
   },
 );
@@ -382,14 +382,15 @@ server.registerTool(
 server.registerTool(
   "vtx_compile",
   {
-    description: "Compile the vertex graph to GLSL vertex shader and validate",
+    description: "Compile the vertex graph to the target language and validate",
   },
   async () => {
-    const compiled = compileVertexGraph(vtxGraph, undefined, currentTarget);
+    const backend = getBackend(currentTarget);
+    const compiled = backend.compileVertex(vtxGraph, undefined, currentTarget);
     if (!compiled.valid) {
       return { content: [{ type: "text", text: compiled.errors ?? "Unknown error" }], isError: true };
     }
-    const validation = await validateGLSLVert(compiled.source);
+    const validation = await backend.validate(compiled.source, "vert");
     const response = `// Target: ${currentTarget}\n// Vertex shader compilation:\n// Valid: ${validation.valid}\n${validation.valid ? "" : `// Errors: ${validation.output}\n`}\n${compiled.source}`;
     return { content: [{ type: "text", text: response }] };
   },

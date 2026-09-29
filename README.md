@@ -1,19 +1,26 @@
 # Shader Graph
 
-A semantic shader graph — an MCP server that lets an AI build GLSL fragment shaders by manipulating a typed, immutable graph instead of writing source text directly.
+A semantic shader graph — an MCP server that lets an AI build shaders by manipulating a typed, immutable graph instead of writing source text directly. Targets GLSL (WebGL/OpenGL) and Metal (MSL).
 
 ## The idea
 
 Conventional AI coding edits strings. This project asks: **what if the AI manipulates a structured semantic object, and source code is just one output format?**
 
-A shader is represented as a graph of typed primitives (Noise → Blur → Mix → Output). The AI adds nodes, wires connections, and tunes parameters through MCP tools. A deterministic compiler translates the graph into valid GLSL.
+A shader is represented as a graph of typed primitives (Noise → Blur → Mix → Output). The AI adds nodes, wires connections, and tunes parameters through MCP tools. A deterministic compiler translates the graph into valid GLSL or Metal Shading Language.
 
 ## Quick start
 
 ```sh
 npm install
-brew install glslang           # for shader validation
+brew install glslang           # for GLSL validation
 npm run dev                    # start the MCP server over stdio
+```
+
+Metal validation additionally needs Xcode with its license accepted and the Metal Toolchain component:
+
+```sh
+sudo xcodebuild -license accept
+xcodebuild -downloadComponent MetalToolchain
 ```
 
 ## Tools
@@ -26,17 +33,17 @@ npm run dev                    # start the MCP server over stdio
 | `remove_node` | Remove a node and its connections |
 | `connect` / `disconnect` | Wire or remove edges between nodes |
 | `set_parameter` | Tune a node's parameter value |
-| `set_target` | Set GLSL target version: es100, es300, or gl150 |
+| `set_target` | Set shader target: `es100`, `es300`, `gl150`, or `metal` |
 | `validate` | Run validation on the graph (type-checking, completeness, DAG, parameter ranges, pass/buffer rules) |
-| `compile` | Compile fragment graph → GLSL for current target |
-| `describe` | Fragment graph metadata (uniforms, varyings, output) |
+| `compile` | Compile fragment graph → target language for current target |
+| `describe` | Fragment graph metadata (uniforms, varyings, output, passes/entry points) |
 | `vtx_list_primitives` | List vertex primitive types |
 | `vtx_inspect_graph` | View the current vertex graph |
 | `vtx_add_node` / `vtx_remove_node` | Add/remove vertex nodes |
 | `vtx_connect` / `vtx_disconnect` | Wire/remove vertex edges |
 | `vtx_set_parameter` | Tune a vertex node's parameter |
 | `vtx_validate` | Validate the vertex graph |
-| `vtx_compile` | Compile vertex graph → GLSL vertex shader |
+| `vtx_compile` | Compile vertex graph → target language |
 | `vtx_describe` | Vertex graph metadata (attributes, uniforms, varyings) |
 | `compile_pair` | Compile vertex + fragment as a matched pair with varying passthrough |
 | `describe_pair` | Combined metadata for both graphs |
@@ -151,8 +158,15 @@ src/
 │   ├── operations.ts  Immutable graph mutations
 │   └── validation.ts  4-category graph validation + pass/buffer rules
 ├── compiler/
-│   ├── compile.ts     Fragment graph → GLSL code generator
-│   └── vertex.ts      Vertex graph → GLSL code generator
+│   ├── backend.ts     ShaderBackend interface + getBackend(target) resolver
+│   ├── targets.ts     Target/language definitions (GLSL dialects + metal)
+│   ├── compile.ts     Fragment graph → GLSL code generator (GLSL backend)
+│   ├── vertex.ts      Vertex graph → GLSL code generator (GLSL backend)
+│   └── msl/
+│       ├── fragment.ts  Fragment graph → MSL (per-pass entry points)
+│       ├── vertex.ts    Vertex graph → MSL (stage_in / [[position]])
+│       ├── helpers.ts   MSL helper library (noise, fbm, hsv, sobel)
+│       └── validate.ts  xcrun -sdk macosx metal validation (graceful fallback)
 benchmark/
 ├── tasks.json         5 benchmark task definitions
 ├── score.mjs          GLSL output scoring
@@ -165,7 +179,8 @@ research/
 tests/
 ├── graph.test.ts       Graph model tests (25 tests)
 ├── compiler.test.ts    Fragment compiler tests (25 tests)
-└── vertex.test.ts      Vertex compiler tests (13 tests)
+├── vertex.test.ts      Vertex compiler tests (13 tests)
+└── msl.test.ts         Metal backend tests (49 tests)
 ```
 
 ## 3D Demo
@@ -176,26 +191,39 @@ Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons wi
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (92 tests)
-
-## GLSL targets
-
-Use `set_target` to switch between GLSL dialects:
-
-| Target | Version | Use case |
-|--------|---------|----------|
-| `es100` | GLSL ES 1.00 | WebGL 1, GLES 2.0 (default) |
-| `es300` | GLSL ES 3.00 | WebGL 2, Raspberry Pi 3+ |
-| `gl150` | GLSL 1.50 | OpenGL 3.2, macOS, openFrameworks |
-
-The graph structure, validation, and primitives are target-agnostic — only the GLSL text generation changes (`attribute` → `in`, `texture2D` → `texture`, `gl_FragColor` → `out vec4 fragColor`, etc.).
+npm test            # vitest run (141 tests)
 ```
+
+## Targets
+
+Use `set_target` to switch output language and dialect:
+
+| Target | Language | Version | Use case |
+|--------|----------|---------|----------|
+| `es100` | GLSL | GLSL ES 1.00 | WebGL 1, GLES 2.0 (default) |
+| `es300` | GLSL | GLSL ES 3.00 | WebGL 2, Raspberry Pi 3+ |
+| `gl150` | GLSL | GLSL 1.50 | OpenGL 3.2, macOS, openFrameworks |
+| `metal` | MSL | Metal 3.0 | Metal on macOS / iOS, native apps |
+
+The graph structure, validation, and primitives are target-agnostic — only code generation changes. GLSL dialects differ by tokens (`attribute` → `in`, `texture2D` → `texture`, `gl_FragColor` → `out vec4 fragColor`). Metal is a full backend with its own conventions.
+
+### Metal (MSL) code generation
+
+- **Entry points** — a single-pass graph becomes `fragment_main`; a multi-pass graph emits **one `[[fragment]]` function per pass** (`fragment_pass0`, `fragment_pass1`, …) rather than a GLSL-style `PASSINDEX` branch. `describe` reports the entry-point names and which pass is the display output.
+- **Uniforms** — gathered into a `Uniforms` struct bound at `[[buffer(0)]]`, e.g. `float2 iResolution`, `float iTime`, `float4x4 uLightMVP`. Prefixed as `u.iResolution` in generated code.
+- **Textures / buffers** — `texture2d<float>` bound at `[[texture(i)]]`, sampled via a fixed `constexpr sampler _samp`. Texture units are `uTexture0`, `uTexture1`, …; named `PassTarget` buffers keep their name as the texture argument (`blurBuf [[texture(0)]]`). `describe` lists each resource and its binding index.
+- **Vertex** — stage-in attributes `aPosition/aNormal/aTexCoord/aColor` at `[[attribute(0..3)]]`; varyings pass through `VertexOut`/`FragIn` struct members; output is `[[position]]`.
+- **Derivatives** — `dFdx/dFdy` become `dfdx/dfdy`; no extension declaration needed.
+- **Validation** — compiles with `xcrun -sdk macosx metal -c`. If the Metal Toolchain is missing, the Xcode license is unaccepted, or you are off macOS, validation degrades to "skipped" rather than failing.
+
+Deeper dive: `src/compiler/msl/`. The `Backend` interface (`src/compiler/backend.ts`) keeps GLSL and MSL as interchangeable code generators behind `getBackend(target)`.
 
 ## Future directions
 
 - **ISF output target** — emit the ISF `.fs` format (JSON descriptor header + GLSL body). The graph already uses ISF's pass/buffer vocabulary, so compiled multi-pass shaders map almost directly; this would make graph output loadable in VDMX, Resolume, TouchDesigner, and other ISF hosts.
 - **Compute shaders** — the same semantic graph model extends naturally to compute pipelines. Instead of a vertex→fragment pipeline, compute shaders have a dispatch grid (workgroups → invocations). Audio DSP on the GPU is a compelling application: oscillator → filter → envelope → output maps directly to a dataflow graph, with float buffers flowing between typed nodes instead of vec4 pixels.
-- **More compiler targets** — HLSL (DirectX), WGSL (WebGPU), Metal, SPIR-V. The semantic graph is target-agnostic; each target is a new code generator.
+- **More compiler targets** — HLSL (DirectX), WGSL (WebGPU), SPIR-V. The backend abstraction is now in place; each new target is another code generator.
+- **Metal host binding metadata** — an explicit descriptor (MTL buffer/texture/sampler indices per entry point, uniform struct layout) so a Metal host can build `MTLRenderPipelineState`s without parsing the MSL.
 - **Application-level semantic graphs** — extending the metaphor beyond shaders to frameworks like openFrameworks, where the graph describes application architecture (event-driven state machines, callbacks, GPU interaction) rather than per-pixel computation.
 - **Graph visualizer** — the MCP tools work, but a visual graph editor would make the graph explorable.
 - **Geodesic sphere benchmark** — subdividing the icosahedron at increasing levels for a smooth morph from rough to sphere.

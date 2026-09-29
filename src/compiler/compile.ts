@@ -7,8 +7,8 @@ import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
 import { topologicalSort, topologicalSortSubset } from "../graph/operations.js";
 import { analyzePasses } from "../graph/passes.js";
-import { getTarget, isValidTarget } from "./targets.js";
-import type { Target, TargetDef } from "./targets.js";
+import { getTarget, isGLSLTarget } from "./targets.js";
+import type { TargetDef } from "./targets.js";
 
 interface CompiledShader {
   source: string;
@@ -555,7 +555,7 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
 }
 
 export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[], targetName: string = "es100"): CompiledShader {
-  const target = getTarget(isValidTarget(targetName) ? targetName : "es100");
+  const target = getTarget(isGLSLTarget(targetName) ? targetName : "es100");
   const validation = validateGraph(state);
   if (!validation.valid) {
     return {
