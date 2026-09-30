@@ -7,6 +7,7 @@ export interface PassInfo {
   target?: string;
   persistent: boolean;
   float: boolean;
+  format: string;
   width: string;
   height: string;
   nodes: string[];
@@ -16,6 +17,7 @@ export interface BufferInfo {
   name: string;
   persistent: boolean;
   float: boolean;
+  format: string;
   width: string;
   height: string;
   writerSinkId: string;
@@ -28,6 +30,12 @@ export interface PassAnalysis {
 }
 
 const IDENTIFIER_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+export const VALID_FORMATS = ["auto", "rgba8", "rgba16f", "rgba32f", "r8", "r16f", "r32f", "rg8", "rg16f"];
+
+function resolveFormat(format: unknown, float: boolean): string {
+  if (typeof format === "string" && format !== "auto" && VALID_FORMATS.includes(format)) return format;
+  return float ? "rgba32f" : "rgba8";
+}
 
 export function isValidSizeEquation(expr: string): boolean {
   if (!expr) return false;
@@ -101,6 +109,10 @@ export function analyzePasses(state: GraphState): PassAnalysis {
     if (!isValidSizeEquation(height)) {
       errors.push(`Invalid height equation "${height}" for buffer "${name}"`);
     }
+    const format = pt.params.format;
+    if (format !== undefined && (typeof format !== "string" || !VALID_FORMATS.includes(format))) {
+      errors.push(`Invalid format "${String(format)}" for buffer "${name}"`);
+    }
   }
 
   const sinks = [...passTargets, ...outputNodes];
@@ -109,13 +121,15 @@ export function analyzePasses(state: GraphState): PassAnalysis {
   for (const sink of sinks) {
     const isTarget = sink.typeName === "PassTarget";
     const closure = upstreamNodes(state, sink.id);
+    const sinkFloat = isTarget ? ((sink.params.float as number) ?? 0) === 1 : false;
     const pass: PassInfo = {
       index: -1,
       sinkNodeId: sink.id,
       sinkType: isTarget ? "PassTarget" : "Output",
       target: isTarget ? ((sink.params.name as string) ?? "") : undefined,
       persistent: isTarget ? ((sink.params.persistent as number) ?? 0) === 1 : false,
-      float: isTarget ? ((sink.params.float as number) ?? 0) === 1 : false,
+      float: sinkFloat,
+      format: resolveFormat(isTarget ? sink.params.format : undefined, sinkFloat),
       width: isTarget ? ((sink.params.width as string) ?? "$WIDTH") : "$WIDTH",
       height: isTarget ? ((sink.params.height as string) ?? "$HEIGHT") : "$HEIGHT",
       nodes: [...closure],
@@ -185,14 +199,18 @@ export function analyzePasses(state: GraphState): PassAnalysis {
 
   const buffers: BufferInfo[] = passTargets
     .filter((pt) => IDENTIFIER_RE.test((pt.params.name as string) ?? ""))
-    .map((pt) => ({
-      name: pt.params.name as string,
-      persistent: ((pt.params.persistent as number) ?? 0) === 1,
-      float: ((pt.params.float as number) ?? 0) === 1,
-      width: (pt.params.width as string) ?? "$WIDTH",
-      height: (pt.params.height as string) ?? "$HEIGHT",
-      writerSinkId: pt.id,
-    }));
+    .map((pt) => {
+      const float = ((pt.params.float as number) ?? 0) === 1;
+      return {
+        name: pt.params.name as string,
+        persistent: ((pt.params.persistent as number) ?? 0) === 1,
+        float,
+        format: resolveFormat(pt.params.format, float),
+        width: (pt.params.width as string) ?? "$WIDTH",
+        height: (pt.params.height as string) ?? "$HEIGHT",
+        writerSinkId: pt.id,
+      };
+    });
 
   return { passes: finalOrder, buffers, errors };
 }

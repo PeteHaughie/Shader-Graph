@@ -33,6 +33,8 @@ xcodebuild -downloadComponent MetalToolchain
 | `remove_node` | Remove a node and its connections |
 | `connect` / `disconnect` | Wire or remove edges between nodes |
 | `set_parameter` | Tune a node's parameter value |
+| `set_graph` / `load_graph` | Import a graph document (round-trip); honours client-supplied ids, else assigns deterministic `n0`/`e0` ids |
+| `export_graph` | Export a versioned, self-describing document (fragment, vertex, or pair) with target and primitive-registry version |
 | `set_target` | Set shader target: `es100`, `es300`, `gl150`, or `metal` |
 | `validate` | Run validation on the graph (type-checking, completeness, DAG, parameter ranges, pass/buffer rules) |
 | `compile` | Compile fragment graph → target language for current target |
@@ -49,22 +51,23 @@ xcodebuild -downloadComponent MetalToolchain
 | `describe_pair` | Combined metadata for both graphs |
 | `compile_depth_pass` | Depth-only shaders for shadow map rendering |
 
-## Primitive catalogue (41 nodes)
+## Primitive catalogue (52 nodes)
 
-### Fragment shader (29 nodes)
+### Fragment shader (39 nodes)
 
 | Category | Nodes |
 |----------|-------|
-| **Sources** | Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time**, **FromVertex** |
+| **Sources** | **Input**, Texture, Noise, **SmoothNoise**, **FractalNoise**, SolidColor, Gradient, Checkerboard, **Time**, **FromVertex** |
 | **Buffers** | **PassTarget**, **ReadBuffer** |
+| **Coordinate** | **FragCoord**, **Floor**, **Mod**, **TexelSize**, **Swizzle** |
 | **Color** | BrightnessContrast, HueShift, Saturation, Invert, Threshold, **Palette** |
 | **Blend** | Mix, Add, Subtract, Multiply |
-| **Lighting** | **DiffuseLight**, **AmbientLight** |
+| **Lighting** | **DiffuseLight**, **AmbientLight**, **SpecularLight**, **NormalMap**, **ShadowMap** |
 | **Filter** | Blur, Glow, EdgeDetect, Displace |
 | **Utility** | Mask, **SmoothStep** |
 | **Output** | Output |
 
-### Vertex shader (12 nodes)
+### Vertex shader (13 nodes)
 
 | Category | Nodes |
 |----------|-------|
@@ -86,6 +89,7 @@ The graph can render in multiple passes by rendering into **named buffers** that
   - `name` (string) — the buffer name, also its GLSL sampler identifier
   - `persistent` (0/1) — keep the buffer across frames (for accumulation/trails/feedback)
   - `float` (0/1) — allocate a 32-bit float buffer (for data, not just color)
+  - `format` (enum, optional) — explicit pixel format (`auto` default); `auto` → `rgba32f` when `float=1`, else `rgba8`
   - `width` / `height` (string) — pass size equations, e.g. `"$WIDTH/16.0"` for a low-res buffer; `$WIDTH`/`$HEIGHT` are the output size
 - **`ReadBuffer`** — a source that samples a named buffer (optional `uv` input, defaulting to normalized coordinates).
 
@@ -113,7 +117,17 @@ void main() {
 }
 ```
 
-`describe` reports each pass's `index`, `target`, `persistent`, `float`, `width`/`height`, and whether it is the final `output`, so a host knows which framebuffers to allocate and in what order to run them.
+`describe` reports each pass's `index`, `target`, `persistent`, `float`, `format`, `width`/`height`, and whether it is the final `output`, so a host knows which framebuffers to allocate and in what order to run them.
+
+## Typed parameters, port conventions & round-trip
+
+The registry is the machine-readable contract a host adapter normalises against. It is versioned and content-hashed (`list_primitives` returns `{ schema, version, count, hash, primitives }`) so consumers can detect vocabulary drift.
+
+- **Parameter types** — `float`, `int`, `string`, `enum` (with `variants`), and `color`. Colors accept `[r,g,b]`/`[r,g,b,a]` arrays, `"#rrggbb"`/`"#rrggbbaa"` hex, or the legacy `"r,g,b"` CSV string; all normalise to the same generated vector. Enums carry their allowed variants (`Palette.mode`, `Rotate.axis`, `Bend.axis`) and are validated.
+- **Ports** — `vec4` is the default carrier (wider/narrower values travel in `.xy`/`.xyz` — the swizzle idiom). `VertexTexCoord` is typed `vec2`; `mat4`, `float` and `bool` port types exist for future use. `list_primitives` states this convention explicitly.
+- **Video input** — the `Input` primitive (`params: [index]`) is a host-bound live video source; GLSL emits `uniform sampler2D uInputN`, MSL binds `texture2d<float> uInputN`. Processors can now be authored entirely inside the graph.
+- **Round-trip & stable ids** — `export_graph` emits a self-describing payload `{ schema, schemaName, graphType, target, id, nodes, edges, primitives, stages }`. `set_graph` / `load_graph` import such a document, honouring client-supplied node/edge ids and assigning deterministic `n0`/`e0` ids when omitted. The graph `id` is a content hash, so identical documents share an identity (usable as a cache key). Stored params are not materialised against defaults — the versioned registry lets a consumer do that itself.
+- **Pass formats** — `PassTarget.format` (`auto` default, or `rgba8`/`rgba16f`/`rgba32f`/`r8`/`r16f`/`r32f`/`rg8`/`rg16f`) makes the pixel format explicit instead of inferring from the `float` flag; `auto` resolves to `rgba32f` when `float=1`, else `rgba8`.
 
 ## Configure in opencode
 
@@ -152,10 +166,13 @@ src/
 ├── index.ts           MCP server entry point
 ├── graph/
 │   ├── types.ts       Node, Edge, GraphState interfaces
-│   ├── primitives.ts  PortType enum, GraphType, port/param specs
-│   ├── registry.ts    41 primitive definitions (29 frag + 12 vert)
+│   ├── primitives.ts  PortType/ParamType enums, GraphType, port/param specs
+│   ├── registry.ts    52 primitive definitions (39 frag + 13 vert) + registry version
+│   ├── params.ts      color/enum parsing and validation helpers
+│   ├── hash.ts        content hashing for stable graph identity
+│   ├── document.ts    versioned self-describing export payload
 │   ├── passes.ts      Multi-pass analysis: partitioning, ordering, buffer metadata
-│   ├── operations.ts  Immutable graph mutations
+│   ├── operations.ts  Immutable graph mutations, deterministic ids, load/round-trip
 │   └── validation.ts  4-category graph validation + pass/buffer rules
 ├── compiler/
 │   ├── backend.ts     ShaderBackend interface + getBackend(target) resolver
@@ -180,7 +197,8 @@ tests/
 ├── graph.test.ts       Graph model tests (25 tests)
 ├── compiler.test.ts    Fragment compiler tests (25 tests)
 ├── vertex.test.ts      Vertex compiler tests (13 tests)
-└── msl.test.ts         Metal backend tests (49 tests)
+├── msl.test.ts         Metal backend tests (49 tests)
+└── change-request.test.ts  Host change-request tests: Input, round-trip, typed params, formats (23 tests)
 ```
 
 ## 3D Demo
@@ -191,7 +209,7 @@ Open `demo.html` in a browser to see a WebGL render of 3-to-20-sided polygons wi
 
 ```sh
 npm run typecheck   # tsc --noEmit
-npm test            # vitest run (141 tests)
+npm test            # vitest run (164 tests)
 ```
 
 ## Targets

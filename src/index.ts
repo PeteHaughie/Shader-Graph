@@ -1,7 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
-import { listPrimitives } from "./graph/registry.js";
-import { createGraph, addNode, removeNode, connect, disconnect, setParameter } from "./graph/operations.js";
+import { listPrimitives, primitiveRegistryInfo } from "./graph/registry.js";
+import { createGraph, addNode, removeNode, connect, disconnect, setParameter, loadGraph } from "./graph/operations.js";
+import { buildGraphDocument } from "./graph/document.js";
+import { GraphType } from "./graph/primitives.js";
 import { validateGraph } from "./graph/validation.js";
 import { getBackend } from "./compiler/backend.js";
 import { isValidTarget, targetList } from "./compiler/targets.js";
@@ -13,9 +15,28 @@ const server = new McpServer({
   version: "0.1.0",
 });
 
-let graph = createGraph();
-let vtxGraph = createGraph();
+let graph = createGraph(GraphType.Fragment);
+let vtxGraph = createGraph(GraphType.Vertex);
 let currentTarget: Target = "es100";
+
+const nodeDocSchema = z.object({
+  id: z.string().optional().describe("Client-supplied stable id; omitted ids are assigned deterministically (n0, n1, ...)"),
+  type: z.string(),
+  params: z.record(z.string(), z.unknown()).default({}),
+});
+const edgeDocSchema = z.object({
+  id: z.string().optional(),
+  from: z.string(),
+  fromPort: z.string(),
+  to: z.string(),
+  toPort: z.string(),
+});
+const graphDocSchema = z.object({
+  graphType: z.nativeEnum(GraphType).optional(),
+  target: z.string().optional(),
+  nodes: z.array(nodeDocSchema),
+  edges: z.array(edgeDocSchema).default([]),
+});
 
 server.registerTool(
   "set_target",
@@ -41,7 +62,19 @@ server.registerTool(
   },
   async () => {
     return {
-      content: [{ type: "text", text: JSON.stringify(listPrimitives(), null, 2) }],
+      content: [{
+        type: "text",
+        text: JSON.stringify(
+          {
+            ...primitiveRegistryInfo(),
+            portTypeConvention: "Ports default to vec4; wider vectors are carried in the .xy/.xyz channels (swizzle idiom). VertexTexCoord is vec2; Mat4 is available for future transform ports.",
+            graphType: "fragment",
+            primitives: listPrimitives(),
+          },
+          null,
+          2,
+        ),
+      }],
     };
   },
 );
@@ -136,7 +169,7 @@ server.registerTool(
     description: "Reset the fragment graph to an empty state (removes all nodes and edges)",
   },
   async () => {
-    graph = createGraph();
+    graph = createGraph(GraphType.Fragment);
     return { content: [{ type: "text", text: "Fragment graph cleared" }] };
   },
 );
@@ -148,12 +181,93 @@ server.registerTool(
     inputSchema: z.object({
       nodeId: z.string().describe("Node ID"),
       name: z.string().describe("Parameter name"),
-      value: z.union([z.number(), z.string()]).describe("New parameter value"),
+      value: z.union([z.number(), z.string(), z.array(z.number())]).describe("New parameter value"),
     }),
   },
   async ({ nodeId, name, value }) => {
     graph = setParameter(graph, nodeId, name, value);
-    return { content: [{ type: "text", text: `Set ${nodeId}:${name} = ${value}` }] };
+    return { content: [{ type: "text", text: `Set ${nodeId}:${name} = ${JSON.stringify(value)}` }] };
+  },
+);
+
+server.registerTool(
+  "set_graph",
+  {
+    description: "Replace the fragment or vertex graph with a supplied document (round-trip import). Honours client-supplied node/edge ids.",
+    inputSchema: graphDocSchema.extend({ graphType: z.nativeEnum(GraphType) }),
+  },
+  async (doc) => {
+    const kind = doc.graphType === "vertex" ? GraphType.Vertex : GraphType.Fragment;
+    const { state, errors } = loadGraph(doc, kind);
+    if (kind === GraphType.Vertex) vtxGraph = state;
+    else graph = state;
+    const validation = validateGraph(state);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ graphType: kind, id: state.id, loadErrors: errors, validation }, null, 2),
+      }],
+      isError: errors.length > 0 || !validation.valid,
+    };
+  },
+);
+
+server.registerTool(
+  "load_graph",
+  {
+    description: "Import a fragment and/or vertex graph document in one call (round-trip). Honours client-supplied ids.",
+    inputSchema: z.object({
+      fragment: graphDocSchema.optional(),
+      vertex: graphDocSchema.optional(),
+    }),
+  },
+  async ({ fragment, vertex }) => {
+    const result: Record<string, unknown> = {};
+    const errors: string[] = [];
+    if (fragment) {
+      const loaded = loadGraph(fragment, GraphType.Fragment);
+      graph = loaded.state;
+      errors.push(...loaded.errors);
+      result.fragment = { id: graph.id, loadErrors: loaded.errors, validation: validateGraph(graph) };
+    }
+    if (vertex) {
+      const loaded = loadGraph(vertex, GraphType.Vertex);
+      vtxGraph = loaded.state;
+      errors.push(...loaded.errors);
+      result.vertex = { id: vtxGraph.id, loadErrors: loaded.errors, validation: validateGraph(vtxGraph) };
+    }
+    if (!fragment && !vertex) errors.push("Provide at least one of: fragment, vertex");
+    return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], isError: errors.length > 0 };
+  },
+);
+
+server.registerTool(
+  "export_graph",
+  {
+    description: "Export a versioned, self-describing graph document (fragment, vertex, or pair) with target and primitive-registry version.",
+    inputSchema: z.object({
+      graphType: z.enum(["fragment", "vertex", "pair"]).default("fragment"),
+    }),
+  },
+  async ({ graphType }) => {
+    const primitives = primitiveRegistryInfo();
+    let payload: unknown;
+    if (graphType === "pair") {
+      payload = {
+        schema: 1,
+        schemaName: "shader-graph.graph",
+        graphType: "pair",
+        target: currentTarget,
+        primitives,
+        stages: [GraphType.Fragment, GraphType.Vertex],
+        fragment: buildGraphDocument(graph, currentTarget, GraphType.Fragment),
+        vertex: buildGraphDocument(vtxGraph, currentTarget, GraphType.Vertex),
+      };
+    } else {
+      const kind = graphType === "vertex" ? GraphType.Vertex : GraphType.Fragment;
+      payload = buildGraphDocument(kind === GraphType.Vertex ? vtxGraph : graph, currentTarget, kind);
+    }
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }] };
   },
 );
 
@@ -273,7 +387,18 @@ server.registerTool(
   },
   async () => {
     return {
-      content: [{ type: "text", text: JSON.stringify(listPrimitives().filter((p) => p.graphType === "vertex"), null, 2) }],
+      content: [{
+        type: "text",
+        text: JSON.stringify(
+          {
+            ...primitiveRegistryInfo(),
+            graphType: "vertex",
+            primitives: listPrimitives().filter((p) => p.graphType === "vertex"),
+          },
+          null,
+          2,
+        ),
+      }],
     };
   },
 );
@@ -337,7 +462,7 @@ server.registerTool(
     description: "Reset the vertex graph to an empty state (removes all nodes and edges)",
   },
   async () => {
-    vtxGraph = createGraph();
+    vtxGraph = createGraph(GraphType.Vertex);
     return { content: [{ type: "text", text: "Vertex graph cleared" }] };
   },
 );
@@ -359,7 +484,7 @@ server.registerTool(
   {
     description: "Change a vertex node parameter",
     inputSchema: z.object({
-      nodeId: z.string(), name: z.string(), value: z.union([z.number(), z.string()]),
+      nodeId: z.string(), name: z.string(), value: z.union([z.number(), z.string(), z.array(z.number())]),
     }),
   },
   async ({ nodeId, name, value }) => {

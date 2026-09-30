@@ -1,4 +1,5 @@
 import { PrimitiveDefinition, PortType, GraphType } from "./primitives.js";
+import { contentHash } from "./hash.js";
 
 const PRIMITIVES: PrimitiveDefinition[] = [
   {
@@ -7,6 +8,13 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     inputs: [{ name: "uv", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [{ name: "url", type: "string", default: "" }],
+  },
+  {
+    graphType: GraphType.Fragment,
+    typeName: "Input",
+    inputs: [],
+    outputs: [{ name: "out", type: PortType.Vec4 }],
+    params: [{ name: "index", type: "int", default: 0, min: 0, max: 7 }],
   },
   {
     graphType: GraphType.Fragment,
@@ -200,7 +208,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     typeName: "Palette",
     inputs: [{ name: "value", type: PortType.Vec4 }],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "mode", type: "string", default: "fire" }],
+    params: [{ name: "mode", type: "enum", default: "fire", variants: ["fire", "ice", "rainbow", "gold", "neon"] }],
   },
   {
     graphType: GraphType.Fragment,
@@ -277,6 +285,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "name", type: "string", default: "" },
       { name: "persistent", type: "int", default: 0, min: 0, max: 1 },
       { name: "float", type: "int", default: 0, min: 0, max: 1 },
+      { name: "format", type: "enum", default: "auto", variants: ["auto", "rgba8", "rgba16f", "rgba32f", "r8", "r16f", "r32f", "rg8", "rg16f"], optional: true },
       { name: "width", type: "string", default: "$WIDTH" },
       { name: "height", type: "string", default: "$HEIGHT" },
     ],
@@ -306,7 +315,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     graphType: GraphType.Vertex,
     typeName: "VertexTexCoord",
     inputs: [],
-    outputs: [{ name: "out", type: PortType.Vec4 }],
+    outputs: [{ name: "out", type: PortType.Vec2 }],
     params: [],
   },
   {
@@ -334,7 +343,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
       { name: "angle", type: "float", default: 0, min: 0, max: 360, isInput: true },
-      { name: "axis", type: "string", default: "y" },
+      { name: "axis", type: "enum", default: "y", variants: ["x", "y", "z"] },
     ],
   },
   {
@@ -364,7 +373,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
       { name: "amplitude", type: "float", default: 0.5, min: 0, max: 5, isInput: true },
       { name: "frequency", type: "float", default: 2, min: 0, max: 10, isInput: true },
       { name: "speed", type: "float", default: 1, min: 0, max: 5, isInput: true },
-      { name: "axis", type: "string", default: "z" },
+      { name: "axis", type: "enum", default: "z", variants: ["x", "y", "z"] },
     ],
   },
   {
@@ -384,7 +393,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
       { name: "angle", type: "float", default: 30, min: 0, max: 180, isInput: true },
-      { name: "axis", type: "string", default: "y" },
+      { name: "axis", type: "enum", default: "y", variants: ["x", "y"] },
     ],
   },
   {
@@ -415,7 +424,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
       { name: "lightDir", type: "string", default: "0.5,1,0.5" },
-      { name: "color", type: "string", default: "1.0,0.0,0.0" },
+      { name: "color", type: "color", default: [1, 0, 0, 1] },
     ],
   },
   {
@@ -423,7 +432,7 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     typeName: "AmbientLight",
     inputs: [],
     outputs: [{ name: "out", type: PortType.Vec4 }],
-    params: [{ name: "color", type: "string", default: "0.1,0.0,0.0" }],
+    params: [{ name: "color", type: "color", default: [0.1, 0, 0, 1] }],
   },
   {
     graphType: GraphType.Fragment,
@@ -449,12 +458,33 @@ const PRIMITIVES: PrimitiveDefinition[] = [
     outputs: [{ name: "out", type: PortType.Vec4 }],
     params: [
       { name: "shininess", type: "float", default: 32, min: 1, max: 256 },
-      { name: "color", type: "string", default: "1.0,1.0,1.0" },
+      { name: "color", type: "color", default: [1, 1, 1, 1] },
     ],
   },
 ];
 
 const BY_NAME = new Map<string, PrimitiveDefinition>(PRIMITIVES.map((p) => [p.typeName, p]));
+
+export const PRIMITIVE_REGISTRY_VERSION = 2;
+export const PRIMITIVE_REGISTRY_SCHEMA = "shader-graph.primitives";
+
+export function primitiveRegistryInfo(): { schema: string; version: number; count: number; hash: string } {
+  const canonical = JSON.stringify(
+    PRIMITIVES.map((p) => ({
+      typeName: p.typeName,
+      graphType: p.graphType,
+      inputs: p.inputs,
+      outputs: p.outputs,
+      params: p.params,
+    })),
+  );
+  return {
+    schema: PRIMITIVE_REGISTRY_SCHEMA,
+    version: PRIMITIVE_REGISTRY_VERSION,
+    count: PRIMITIVES.length,
+    hash: contentHash(canonical),
+  };
+}
 
 export function getPrimitive(name: string): PrimitiveDefinition | undefined {
   return BY_NAME.get(name);

@@ -159,7 +159,7 @@ describe("multi-pass primitives", () => {
     const rb = getPrimitive("ReadBuffer");
     expect(pt).toBeDefined();
     expect(rb).toBeDefined();
-    expect(pt?.params.map((p) => p.name)).toEqual(["name", "persistent", "float", "width", "height"]);
+    expect(pt?.params.map((p) => p.name)).toEqual(["name", "persistent", "float", "format", "width", "height"]);
     expect(rb?.inputs[0]).toMatchObject({ name: "uv", optional: true });
   });
 

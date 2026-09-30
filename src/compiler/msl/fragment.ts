@@ -2,6 +2,7 @@ import { GraphState, Node } from "../../graph/types.js";
 import { validateGraph } from "../../graph/validation.js";
 import { topologicalSort, topologicalSortSubset } from "../../graph/operations.js";
 import { analyzePasses } from "../../graph/passes.js";
+import { colorLiteral } from "../../graph/params.js";
 import type { VaryingInfo, ShaderMetadata, ShaderPass } from "../compile.js";
 import {
   MSL_PRELUDE,
@@ -44,10 +45,12 @@ function buildInputVarMap(state: GraphState, nodeId: string, varNames: Map<strin
 interface TextureResources {
   byNode: Map<string, number>;
   bufferByName: Map<string, number>;
+  inputByIndex: Map<number, number>;
   shadowIndex: number;
   textureArgs: (index: number) => string;
   textureArgsForNode: (nodeId: string) => { name: string; index: number } | null;
   textureArgsForBuffer: (name: string) => { name: string; index: number };
+  inputBinding: (inputIndex: number) => number;
 }
 
 function collectTextureResources(state: GraphState): TextureResources {
@@ -58,6 +61,9 @@ function collectTextureResources(state: GraphState): TextureResources {
       byNode.set(node.id, next++);
     }
   }
+  const inputByIndex = new Map<number, number>();
+  const inputIndices = [...new Set([...state.nodes.values()].filter((n) => n.typeName === "Input").map((n) => (n.params.index as number) ?? 0))].sort((a, b) => a - b);
+  for (const idx of inputIndices) inputByIndex.set(idx, next++);
   const analysis = analyzePasses(state);
   const bufferByName = new Map<string, number>();
   for (const buffer of analysis.buffers) {
@@ -67,10 +73,12 @@ function collectTextureResources(state: GraphState): TextureResources {
   return {
     byNode,
     bufferByName,
+    inputByIndex,
     shadowIndex,
     textureArgs: (index: number) => `texture2d<float> uTexture${index} [[texture(${index})]]`,
     textureArgsForNode: (nodeId: string) => (byNode.has(nodeId) ? { name: `uTexture${byNode.get(nodeId)}`, index: byNode.get(nodeId)! } : null),
     textureArgsForBuffer: (name: string) => ({ name, index: bufferByName.get(name)! }),
+    inputBinding: (inputIndex: number) => inputByIndex.get(inputIndex) ?? shadowIndex,
   };
 }
 
@@ -115,6 +123,13 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       } else {
         lines.push(`  float4 ${varName} = float4(${uv}, 0.0, 1.0);`);
       }
+      break;
+    }
+    case "Input": {
+      const idx = (node.params.index as number) ?? 0;
+      const name = `uInput${idx}`;
+      useTexture(ctx, name, textures.inputBinding(idx));
+      lines.push(`  float4 ${varName} = ${name}.sample(_samp, ${fragCoord} / u.iResolution);`);
       break;
     }
     case "ReadBuffer": {
@@ -351,7 +366,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
     case "DiffuseLight": {
       const normal = inputVarMap.get("normal") ?? "float4(0.0, 1.0, 0.0, 0.0)";
       const ld = (node.params.lightDir as string) ?? "0.5,1.0,0.5";
-      const col = (node.params.color as string) ?? "1.0,0.0,0.0";
+      const col = colorLiteral(node.params.color, [1, 0, 0, 1]);
       lines.push(`  float3 dl_n = normalize(${normal}.xyz);`);
       lines.push(`  float3 dl_l = normalize(float3(${ld}));`);
       lines.push(`  float dl_dot = max(dot(dl_n, dl_l), 0.0);`);
@@ -359,7 +374,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       break;
     }
     case "AmbientLight": {
-      const col = (node.params.color as string) ?? "0.1,0.0,0.0";
+      const col = colorLiteral(node.params.color, [0.1, 0, 0, 1]);
       lines.push(`  float4 ${varName} = float4(float3(${col}), 1.0);`);
       break;
     }
@@ -386,7 +401,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       const viewDir = inputVarMap.get("viewDir") ?? "float4(0.0, 0.0, 1.0, 0.0)";
       const lightDir = inputVarMap.get("lightDir") ?? "float4(0.5, 1.0, 0.5, 0.0)";
       const shininess = (node.params.shininess as number) ?? 32;
-      const col = (node.params.color as string) ?? "1.0,1.0,1.0";
+      const col = colorLiteral(node.params.color, [1, 1, 1, 1]);
       lines.push(`  float3 sl_n = normalize(${normal}.xyz);`);
       lines.push(`  float3 sl_l = normalize(${lightDir}.xyz);`);
       lines.push(`  float3 sl_v = normalize(${viewDir}.xyz);`);
@@ -478,6 +493,9 @@ export function describeMetalFragment(
     const node = state.nodes.get(nodeId);
     uniforms.push({ name: `uTexture${index}`, type: "texture2d<float>", semantic: node?.typeName === "NormalMap" ? "normalMap" : "texture" });
   }
+  for (const [inputIndex] of [...textures.inputByIndex.entries()].sort((a, b) => a[1] - b[1])) {
+    uniforms.push({ name: `uInput${inputIndex}`, type: "texture2d<float>", semantic: "input" });
+  }
   for (const [name, index] of [...textures.bufferByName.entries()].sort((a, b) => a[1] - b[1])) {
     uniforms.push({ name, type: "texture2d<float>", semantic: "buffer" });
   }
@@ -499,6 +517,7 @@ export function describeMetalFragment(
         target: pass.target,
         persistent: pass.persistent,
         float: pass.float,
+        format: pass.format,
         width: pass.width,
         height: pass.height,
         output,

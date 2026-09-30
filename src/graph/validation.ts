@@ -3,6 +3,7 @@ import { PortType } from "./primitives.js";
 import { getPrimitive } from "./registry.js";
 import { topologicalSort } from "./operations.js";
 import { analyzePasses } from "./passes.js";
+import { isValidColor, isValidEnum } from "./params.js";
 
 export interface ValidationError {
   nodeId?: string;
@@ -28,7 +29,9 @@ export function validateGraph(state: GraphState): ValidationResult {
     for (const param of def.params) {
       const value = node.params[param.name];
       if (value === undefined || value === null) {
-        errors.push({ nodeId: node.id, message: `Missing required parameter: ${param.name}` });
+        if (!param.optional) {
+          errors.push({ nodeId: node.id, message: `Missing required parameter: ${param.name}` });
+        }
         continue;
       }
       if (param.type === "float" && typeof value === "number") {
@@ -38,6 +41,18 @@ export function validateGraph(state: GraphState): ValidationResult {
         if (param.max !== undefined && value > param.max) {
           errors.push({ nodeId: node.id, message: `Parameter ${param.name} = ${value} is above max ${param.max}` });
         }
+      }
+      if (param.type === "enum" && param.variants && !isValidEnum(value, param.variants)) {
+        errors.push({
+          nodeId: node.id,
+          message: `Parameter ${param.name} = "${String(value)}" is not one of: ${param.variants.join(", ")}`,
+        });
+      }
+      if (param.type === "color" && !isValidColor(value)) {
+        errors.push({
+          nodeId: node.id,
+          message: `Parameter ${param.name} is not a valid color (expected [r,g,b,a], "#rrggbb", or "r,g,b")`,
+        });
       }
     }
   }

@@ -1,3 +1,5 @@
+import { GraphType } from "./primitives.js";
+
 export interface Node {
   id: string;
   typeName: string;
@@ -14,6 +16,7 @@ export interface Edge {
 
 export interface GraphState {
   id: string;
+  graphType: GraphType;
   nodes: Map<string, Node>;
   edges: Map<string, Edge>;
 }

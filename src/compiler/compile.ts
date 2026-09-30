@@ -7,6 +7,7 @@ import { getPrimitive } from "../graph/registry.js";
 import { validateGraph } from "../graph/validation.js";
 import { topologicalSort, topologicalSortSubset } from "../graph/operations.js";
 import { analyzePasses } from "../graph/passes.js";
+import { colorLiteral } from "../graph/params.js";
 import { getTarget, isGLSLTarget } from "./targets.js";
 import type { TargetDef } from "./targets.js";
 
@@ -44,6 +45,14 @@ function buildInputVarMap(state: GraphState, nodeId: string, varNames: Map<strin
     }
   }
   return map;
+}
+
+function inputIndices(state: GraphState): number[] {
+  const set = new Set<number>();
+  for (const node of state.nodes.values()) {
+    if (node.typeName === "Input") set.add((node.params.index as number) ?? 0);
+  }
+  return [...set].sort((a, b) => a - b);
 }
 
 function generateNoiseGLSL(): string {
@@ -169,6 +178,7 @@ export interface ShaderPass {
   target?: string;
   persistent?: boolean;
   float?: boolean;
+  format?: string;
   width?: string;
   height?: string;
   output?: boolean;
@@ -198,6 +208,11 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       } else {
         lines.push(`  vec4 ${varName} = vec4(${uv}, 0.0, 1.0);`);
       }
+      break;
+    }
+    case "Input": {
+      const idx = (node.params.index as number) ?? 0;
+      lines.push(`  vec4 ${varName} = ${target.textureFunc}(uInput${idx}, gl_FragCoord.xy / iResolution);`);
       break;
     }
     case "ReadBuffer": {
@@ -428,7 +443,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
     case "DiffuseLight": {
       const normal = inputVarMap.get("normal") ?? "vec4(0.0, 1.0, 0.0, 0.0)";
       const ld = (node.params.lightDir as string) ?? "0.5,1.0,0.5";
-      const col = (node.params.color as string) ?? "1.0,0.0,0.0";
+      const col = colorLiteral(node.params.color, [1, 0, 0, 1]);
       lines.push(`  vec3 dl_n = normalize(${normal}.xyz);`);
       lines.push(`  vec3 dl_l = normalize(vec3(${ld}));`);
       lines.push(`  float dl_dot = max(dot(dl_n, dl_l), 0.0);`);
@@ -436,7 +451,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       break;
     }
     case "AmbientLight": {
-      const col = (node.params.color as string) ?? "0.1,0.0,0.0";
+      const col = colorLiteral(node.params.color, [0.1, 0, 0, 1]);
       lines.push(`  vec4 ${varName} = vec4(vec3(${col}), 1.0);`);
       break;
     }
@@ -465,7 +480,7 @@ function emitNodeLines(node: Node, varName: string, inputVarMap: Map<string, str
       const viewDir = inputVarMap.get("viewDir") ?? "vec4(0.0, 0.0, 1.0, 0.0)";
       const lightDir = inputVarMap.get("lightDir") ?? "vec4(0.5, 1.0, 0.5, 0.0)";
       const shininess = (node.params.shininess as number) ?? 32;
-      const col = (node.params.color as string) ?? "1.0,1.0,1.0";
+      const col = colorLiteral(node.params.color, [1, 1, 1, 1]);
       lines.push(`  vec3 sl_n = normalize(${normal}.xyz);`);
       lines.push(`  vec3 sl_l = normalize(${lightDir}.xyz);`);
       lines.push(`  vec3 sl_v = normalize(${viewDir}.xyz);`);
@@ -521,6 +536,9 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
   for (let i = 0; i < texCount + blurTexCount + displaceTexCount; i++) {
     uniforms.push({ name: `uTexture${i}`, type: "sampler2D", semantic: "texture" });
   }
+  for (const idx of inputIndices(state)) {
+    uniforms.push({ name: `uInput${idx}`, type: "sampler2D", semantic: "input" });
+  }
   const passes: ShaderPass[] = [];
   if (typeNames.includes("ShadowMap")) {
     uniforms.push({ name: "uShadowMap", type: "sampler2D", semantic: "shadowMap" });
@@ -542,6 +560,7 @@ export function describeFragmentGraph(state: GraphState, externalVaryings?: Vary
         target: pass.target,
         persistent: pass.persistent,
         float: pass.float,
+        format: pass.format,
         width: pass.width,
         height: pass.height,
         output: pass.sinkType === "Output",
@@ -613,6 +632,9 @@ export function compileGraph(state: GraphState, externalVaryings?: VaryingInfo[]
   }
   for (let i = 0; i < texCount + blurTexCount + displaceTexCount; i++) {
     parts.push(`uniform sampler2D uTexture${i};\n`);
+  }
+  for (const idx of inputIndices(state)) {
+    parts.push(`uniform sampler2D uInput${idx};\n`);
   }
   if (typeNames.includes("ShadowMap")) {
     parts.push(`uniform sampler2D uShadowMap;\n`);
